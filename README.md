@@ -1,116 +1,247 @@
 # @causal-order/monitor
 
-Health-aware buffering, replay, and operator monitoring layer for the `causal-order` stack.
+Health-aware buffering, replay, and operator monitoring for the `causal-order` stack.
 
 Status: `v0.0.9` implementation baseline. `v0.1.0` is reserved for real wall-clock validation.
 
-`@causal-order/monitor` now has a working runtime, SQLite reservoir, health tracking, routing, throttling, replay coordination, and transport-facing adapter seams. The current line also includes replay retry backoff hardening and clearer retry inspection for operators and harness tooling.
+`@causal-order/monitor` sits between transport ingestion and downstream delivery so your pipeline can keep accepting events, preserve backlog, and recover in a controlled way when `@causal-order/dedupe` or `causal-order` becomes unavailable.
 
-## Intended Role
+## Install
 
-`@causal-order/monitor` sits after `@causal-order/transport` and around `@causal-order/dedupe` and `causal-order` so the pipeline can degrade and recover more safely when one or more layers become unavailable.
+```bash
+npm install @causal-order/monitor better-sqlite3 causal-order @causal-order/dedupe @causal-order/transport
+```
 
-The current design and implementation direction includes:
+`better-sqlite3` is a direct runtime dependency. `causal-order`, `@causal-order/dedupe`, and `@causal-order/transport` are expected alongside this package as peers.
 
-- health tracking for `@causal-order/transport`
-- rolling SQLite-backed buffering
-- health tracking for `@causal-order/dedupe` and `causal-order`
-- throttled fallback when `@causal-order/dedupe` is offline
-- replay-through-dedupe recovery
-- transport outage visibility and reconnect-burst handling
-- operator-facing metrics, traces, and incident timelines
+## What It Does
 
-## Version `v0.0.9`
+- buffers ingress events in SQLite so downstream outages do not immediately become data loss
+- tracks health for `transport`, `dedupe`, and `causal-order`
+- switches routing behavior when parts of the stack degrade or go offline
+- replays buffered backlog through `@causal-order/dedupe` after recovery
+- exposes snapshots and derived inspection state for operators and automation
 
-The package has moved well beyond scaffold stage.
+## Stability
 
-The current line includes:
+This release provides the current implementation surface and is suitable for integration and harness evaluation, but it has not yet completed real wall-clock validation. The planned `v0.1.0` release is intended to focus on testing and validation rather than new features.
 
-- healthy live forwarding that clears delivered rows from replay consideration
-- buffered `order_buffer_only` behavior while `causal-order` is offline
-- replay gating so backlog recovery does not start too early or mix loosely with live flow
-- replay retry backoff with persisted retry horizon and failure streak evidence
-- retry-aware pruning so retry-waiting rows survive the rolling window and only dead-letter at the hard cutoff
-- snapshot inspection that surfaces retry-waiting backlog, earliest retry horizon, replay next retry time, and consecutive replay failure count
-- derived operator-facing inspection state for live-flow gating, replay-ready backlog, retry delay, and quick recovery posture reading
-- direct inspected snapshot access from `MonitorRuntime` and `TransportMonitorAdapter`
+## When To Use It
 
-## Package Shape
+Use this package when you already have a `causal-order` pipeline and want a monitor layer that can:
 
-Current public exports include:
+- keep ingesting while `causal-order` is offline
+- throttle or bypass parts of the path when `dedupe` is unhealthy
+- coordinate replay after recovery instead of mixing backlog and live flow loosely
+- give operators a compact view of backlog, replay, retry, and health state
 
-- `createMonitorRuntime()`
-- `MonitorRuntime`
+## Package Model
+
+The package gives you two main integration styles:
+
+- `createMonitorRuntime()` or `MonitorRuntime` if you want direct control over ingress, health updates, replay, and storage
+- `TransportMonitorAdapter` if you want a higher-level wrapper that calls your delivery handlers and manages replay pumping through that adapter surface
+
+Other exported building blocks include:
+
 - `HealthTracker`
 - `DeliveryRouter`
 - `ThrottleController`
 - `ReplayCoordinator`
 - `SQLiteReservoir`
-- `TransportMonitorAdapter`
 - `inspectMonitorSnapshot()`
-- monitor harness metadata for `@causal-order/testing`
 
-The runtime-facing inspection path is now available directly through:
+## Subpath Imports
 
-- `MonitorRuntime.getInspectedSnapshot()`
-- `TransportMonitorAdapter.getInspectedSnapshot()`
+The package now exposes official subpath entrypoints so consumers can import narrower surfaces instead of always pulling from the root package:
 
-Current snapshot and inspection surfaces include:
+- `@causal-order/monitor/config`
+- `@causal-order/monitor/health`
+- `@causal-order/monitor/inspect`
+- `@causal-order/monitor/replay`
+- `@causal-order/monitor/routing`
+- `@causal-order/monitor/runtime`
+- `@causal-order/monitor/storage`
+- `@causal-order/monitor/throttle`
+- `@causal-order/monitor/transport`
+- `@causal-order/monitor/types`
 
+The most lightweight analyzer-friendly entrypoints are:
+
+- `@causal-order/monitor/config`
+- `@causal-order/monitor/health`
+- `@causal-order/monitor/inspect`
+- `@causal-order/monitor/routing`
+- `@causal-order/monitor/throttle`
+- `@causal-order/monitor/types`
+
+## Quick Start
+
+```ts
+import { TransportMonitorAdapter } from "@causal-order/monitor";
+
+const monitor = new TransportMonitorAdapter(
+  {
+    async deliverToDedupe(event, context) {
+      await sendToDedupe(event, context);
+    },
+    async deliverToOrder(event, context) {
+      await sendToCausalOrder(event, context);
+    },
+    async onBuffered(event, decision, rowId) {
+      console.log("buffered", { rowId, action: decision.action, eventId: event.id });
+    },
+  },
+  {
+    reservoir: {
+      databasePath: "./monitor.sqlite",
+    },
+  },
+);
+
+monitor.observeHeartbeat("transport");
+monitor.observeHeartbeat("dedupe");
+monitor.observeHeartbeat("causal-order");
+
+await monitor.ingest({
+  id: "evt-1001",
+  nodeId: "transport-a",
+  clock: {
+    physicalTimeMs: BigInt(Date.now()),
+  },
+  payload: {
+    entityId: "order-42",
+    operation: "created",
+  },
+});
+
+const snapshot = monitor.getInspectedSnapshot();
+console.log(snapshot.operationalState);
+```
+
+## Runtime Example
+
+If you want lower-level control, use the runtime directly:
+
+```ts
+import { createMonitorRuntime } from "@causal-order/monitor";
+
+const runtime = createMonitorRuntime({
+  reservoir: {
+    databasePath: "./monitor.sqlite",
+  },
+});
+
+runtime.observeHeartbeat("transport");
+runtime.observeHeartbeat("dedupe");
+runtime.observeHeartbeat("causal-order");
+
+const { rowId, decision } = runtime.ingestTransportEvent({
+  id: "evt-1001",
+  nodeId: "transport-a",
+  clock: {
+    physicalTimeMs: BigInt(Date.now()),
+  },
+  payload: {
+    entityId: "order-42",
+    operation: "created",
+  },
+});
+
+if (decision.action === "accept" && decision.deliveryMode === "normal") {
+  await sendToDedupe();
+  runtime.acknowledgeIngressDelivery([rowId]);
+}
+```
+
+## Routing And Recovery Behavior
+
+The monitor can move between a few main operating modes:
+
+- `normal`: live flow goes through dedupe as usual
+- `dedupe_bypass_throttled`: live flow can bypass dedupe with throttling when dedupe is unhealthy
+- `order_buffer_only`: events are buffered while `causal-order` is offline
+- `full_outage_buffer`: events stay buffered during broader outage conditions
+- `replay_through_dedupe`: buffered backlog drains through dedupe during recovery
+
+Recovery is intentionally conservative:
+
+- the rolling SQLite buffer defaults to `4h`
+- the maximum dual-outage retention window defaults to `6h`
+- replay returns through `@causal-order/dedupe`
+- replay failure applies a retry backoff before trying again
+- live flow stays gated while replay recovery is failed or actively draining
+
+## Configuration
+
+`createDefaultMonitorConfig()` returns the full configuration shape. Common settings:
+
+- `reservoir.databasePath`: SQLite path, `":memory:"` by default
+- `reservoir.rollingBufferWindowMs`: normal rolling retention window
+- `reservoir.fullOutageMaxWindowMs`: hard retention ceiling during deeper outages
+- `transport.heartbeatGraceMs`: heartbeat grace period before transport is considered stale
+- `health.*.degradedAfterMs` and `health.*.offlineAfterMs`: thresholds for each component
+- `throttle.*`: ingress limits for each throttle tier
+- `replay.healthConfirmationHeartbeats`: heartbeats required before replay resumes
+- `replay.pauseLiveFlowDuringReplay`: whether live flow stays gated during drain
+- `replay.retryBackoffMs`: delay before retrying a failed replay attempt
+
+## Inspection And Operator State
+
+For raw state, use:
+
+- `getSnapshot()`
+- `getReplaySnapshot()`
+- `getReservoirStats()`
+
+For operator-facing state, use:
+
+- `getInspectedSnapshot()`
+- `inspectMonitorSnapshot(snapshot)`
+
+The inspected snapshot is the easiest entry point when you want a quick read on:
+
+- current operational posture
+- whether live flow is gated
+- whether replay is ready or retry-waiting
+- backlog size and replay progress
+- whether operator attention is needed
+
+## Public Types
+
+Key exported types include:
+
+- `MonitorConfig`
+- `MonitorIngressEvent`
+- `MonitorIngressDecision`
 - `MonitorSnapshot`
 - `ReplaySessionSnapshot`
 - `ReservoirStats`
 - `InspectedMonitorSnapshot`
 
-## Recovery Rules
+## Version `v0.0.9`
 
-The current implementation follows these conservative rules:
+The current package line includes:
 
-- the healthy SQLite reservoir is always active and rolling for `4h`
-- the dual-outage retention ceiling is a hard `6h` maximum
-- replay always returns through restored `@causal-order/dedupe`
-- replay failure applies a backoff window before retry
-- live flow stays gated while replay recovery is failed or actively draining
+- operational runtime, routing, health tracking, SQLite buffering, and replay coordination
+- retry-aware replay backoff with persisted retry horizon and failure streak visibility
+- retry-safe pruning so waiting rows survive the rolling buffer until the hard cutoff
+- derived inspection output for replay posture, backlog, gating, and operator attention
+- direct inspected snapshot access from both `MonitorRuntime` and `TransportMonitorAdapter`
+
+## Node Support
+
+- Node.js `>=20`
+- ESM package output
 
 ## Validation
 
-This repo currently ships a local replay safety validation path:
+This package is validated in-repo with:
 
-- `npm run build`
+- `npm run check`
 - `npm run test:inspect-snapshot`
 - `npm run test:replay-safety`
-- `npm run ci`
 
-`test:inspect-snapshot` verifies that derived inspection output correctly reflects buffering-only and replay-retry states.
+## License
 
-`test:replay-safety` verifies that:
-
-- retry-waiting rows are not reclaimed too early by rolling-window pruning
-- replay does not restart before the retry horizon
-- rows dead-letter only at the hard retention cutoff when recovery keeps failing
-
-The wider ecosystem validation path continues in `@causal-order/testing`, where monitor-aware scenarios and reporting exercise healthy flow, outages, replay, and recovery behavior end to end.
-
-## Current Boundary
-
-This is still an implementation-stage package, not a long-term stable contract line yet.
-
-What exists now is strong enough for integration and harness validation, but no new monitor features should be added before real wall-clock testing is done.
-
-The next milestone is `v0.1.0`, and it should be a validation milestone rather than another feature milestone.
-
-Until then, the focus should stay on:
-
-- stronger stack-level failure-path testing in `@causal-order/testing`
-- real wall-clock retention and replay timing validation
-- artifact review of backlog growth, retry waiting, drain, and prune behavior
-
-## Local Design Notes
-
-The deeper working notes for this repo live under `.local/`:
-
-- `monitor-design-spec.md`
-- `monitor-v0.0.1-implementation-plan.md`
-- `cross-repo-change-log.md`
-
-Those notes describe the original intent, the phased implementation plan, and the cross-repo testing work that has been done alongside this package.
+MIT

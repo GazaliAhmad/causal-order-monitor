@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- added `publish:prepare` metadata syncing so the exported package version and README release markers stay aligned with `package.json`
+- moved npm dry-run scripts onto a repo-local cache path and added `prepublishOnly` validation to harden the publish flow
+
 ## v0.0.9
 
 - expanded `ReservoirStats` so retry-waiting backlog is visible through `retryWaitingRows` and `earliestRetryAt`

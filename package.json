@@ -15,12 +15,54 @@
   "type": "module",
   "sideEffects": false,
   "main": "./.build/src/index.js",
+  "module": "./.build/src/index.js",
   "types": "./.build/src/index.d.ts",
   "exports": {
     ".": {
       "types": "./.build/src/index.d.ts",
       "import": "./.build/src/index.js"
-    }
+    },
+    "./config": {
+      "types": "./.build/src/config.d.ts",
+      "import": "./.build/src/config.js"
+    },
+    "./health": {
+      "types": "./.build/src/health.d.ts",
+      "import": "./.build/src/health.js"
+    },
+    "./inspect": {
+      "types": "./.build/src/inspect.d.ts",
+      "import": "./.build/src/inspect.js"
+    },
+    "./replay": {
+      "types": "./.build/src/replay.d.ts",
+      "import": "./.build/src/replay.js"
+    },
+    "./routing": {
+      "types": "./.build/src/routing.d.ts",
+      "import": "./.build/src/routing.js"
+    },
+    "./runtime": {
+      "types": "./.build/src/runtime.d.ts",
+      "import": "./.build/src/runtime.js"
+    },
+    "./storage": {
+      "types": "./.build/src/storage.d.ts",
+      "import": "./.build/src/storage.js"
+    },
+    "./throttle": {
+      "types": "./.build/src/throttle.d.ts",
+      "import": "./.build/src/throttle.js"
+    },
+    "./transport": {
+      "types": "./.build/src/transport.d.ts",
+      "import": "./.build/src/transport.js"
+    },
+    "./types": {
+      "types": "./.build/src/types.d.ts",
+      "import": "./.build/src/types.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     ".build/",
@@ -36,23 +78,36 @@
   },
   "keywords": [
     "causal-order",
+    "event-ordering",
+    "esm",
     "monitor",
+    "health-monitoring",
     "sqlite",
+    "sqlite3",
     "buffering",
+    "backpressure",
     "replay",
+    "outage-recovery",
     "failover",
     "recovery",
+    "resilience",
     "observability",
+    "event-replay",
     "event-streams",
-    "distributed-systems"
+    "distributed-systems",
+    "stream-processing",
+    "message-processing"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "ci": "npm run check && npm run test:inspect-snapshot && npm run test:replay-safety && npm run pack:check",
-    "prepack": "npm run build",
-    "pack:check": "npm pack --dry-run",
-    "publish:dry-run": "npm publish --dry-run --access public",
+    "prepack": "npm run publish:prepare && npm run build",
+    "prepublishOnly": "npm run ci",
+    "pack:check": "npm pack --dry-run --cache ./.local/npm-cache",
+    "publish:dry-run": "npm publish --dry-run --access public --cache ./.local/npm-cache",
+    "publish:prepare": "node scripts/prepare-publish.mjs",
+    "publish:prepare:check": "node scripts/prepare-publish.mjs --check",
     "release:check": "npm run ci && npm run publish:dry-run",
     "test:inspect-snapshot": "npm run build && node scripts/inspect-snapshot.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
