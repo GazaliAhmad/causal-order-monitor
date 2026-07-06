@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
