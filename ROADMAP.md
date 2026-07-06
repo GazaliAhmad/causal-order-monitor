@@ -18,7 +18,7 @@ The goal is to make `@causal-order/monitor` a deployable recovery envelope aroun
 
 ## Current Status
 
-- Version `v0.0.7` is now the active implementation baseline for this repo.
+- Version `v0.0.9` is now the active implementation baseline for this repo.
 - The package foundation exists:
   - `package.json`
   - TypeScript build config
@@ -30,23 +30,28 @@ The goal is to make `@causal-order/monitor` a deployable recovery envelope aroun
   - throttled fallback when `/dedupe` is offline
   - replay-through-dedupe recovery
   - `/testing` harness integration as part of the package story
-- The runtime now exists as an active `v0.0.7` implementation line:
+- The runtime now exists as an active `v0.0.9` implementation line:
   - runtime contracts exported
   - SQLite reservoir implemented
   - health tracking implemented
   - routing and throttle control implemented
   - replay coordination implemented
+  - replay retry backoff and failure evidence implemented
+  - replay retry inspection surface implemented
   - transport-facing adapter seam added
   - testing scenario catalog added for handoff into `@causal-order/testing`
   - `monitor-order-outage` has now been validated through healthy flow, `order_buffer_only`, replay-through-recovery, and empty-reservoir completion
+  - repo-local replay safety validation now proves retry-waiting rows are preserved through rolling prune and only dead-letter at the hard cutoff
 
-## Version `v0.0.7` Decisions
+## Version `v0.0.9` Decisions
 
 These are fixed for the first implementation line:
 
 - the healthy buffer is always active and rolling for `4h`
 - the dual-outage retention ceiling is a hard `6h` maximum
 - replay should always return through restored `/dedupe`
+- replay failure should back off briefly before retry and keep live flow gated while backlog recovery is still unsettled
+- retry-waiting backlog should be visible directly in runtime stats and snapshot inspection
 
 These decisions are intentionally conservative.
 They reduce branchy recovery semantics and make the first release easier to reason about under pressure.
@@ -79,7 +84,7 @@ It is not meant to be:
 - a replacement for `causal-order`
 - a replacement for `@causal-order/dedupe`
 
-## `v0.0.7` Release Goal
+## `v0.0.9` Release Goal
 
 The first release goal is narrow:
 
@@ -93,7 +98,7 @@ make `/monitor` real enough that we can prove the following end to end:
 - replay returns through restored `/dedupe`
 - `/testing` can validate and report those behaviors
 
-## `v0.0.7` Workstreams
+## `v0.0.9` Workstreams
 
 ## 1. Runtime Contracts
 
@@ -218,7 +223,7 @@ Exit criteria:
 
 ## 6. Operator Inspection
 
-Even without a UI, `v0.0.7` should give maintainers and operators enough evidence to understand behavior.
+Even without a UI, `v0.0.9` should give maintainers and operators enough evidence to understand behavior.
 
 Required scope:
 
@@ -271,9 +276,9 @@ Exit criteria:
 - monitor failure modes can be exercised without bespoke one-off scripts
 - report output can explain recovery behavior in the same ecosystem language as the other packages
 
-## `v0.0.7` Acceptance Criteria
+## `v0.0.9` Acceptance Criteria
 
-Version `v0.0.7` is done when:
+Version `v0.0.9` is done when:
 
 1. the package exports a real runtime API
 2. SQLite buffering works with rolling `4h` behavior
@@ -285,18 +290,22 @@ Version `v0.0.7` is done when:
 8. live flow does not reopen until replay has completed and health has stabilized briefly
 9. `/testing` can validate the major healthy and degraded paths
 10. monitor-aware run artifacts and summaries exist
+11. replay failure does not immediately churn into uncontrolled retry loops
+12. replay retry timing and consecutive failure evidence are visible in runtime state
+13. retry-waiting backlog is visible directly from reservoir stats and snapshot inspection helpers
+14. a repo-local failure-path test proves retry-waiting rows survive rolling prune and do not replay before the retry horizon
 
-## Next Iteration After `v0.0.7`
+## Next Iteration After `v0.0.9`
 
-The first post-`v0.0.7` line should focus on operational hardening, not dramatic scope expansion.
+The first post-`v0.0.9` line should focus on stack-level validation and operator evidence, not dramatic scope expansion.
 
 Likely next themes:
 
-- better replay throughput controls
-- clearer health heuristics for degraded versus offline states
-- stricter validation around retention and prune behavior
-- stronger reporting around replay lag and catch-up time
-- longer-run harness evidence for realistic `4h` and outage recovery behavior
+- carry replay retry and backoff visibility more deeply into `@causal-order/testing` run summaries and comparisons
+- run longer harness scenarios that make the real `4h` rolling window and `6h` hard ceiling less synthetic
+- add clearer reporting for retry-waiting backlog peaks, replay lag, and catch-up completion time
+- refine health heuristics for degraded versus offline states without making routing semantics branchy
+- improve replay throughput controls only after the retry/backoff behavior is externally validated enough
 
 It should not immediately jump to:
 

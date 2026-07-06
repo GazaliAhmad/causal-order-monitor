@@ -23,6 +23,8 @@ function createSnapshot(
     startedAt: null,
     endedAt: null,
     lastError: null,
+    nextRetryAt: null,
+    consecutiveFailureCount: 0,
     recoveryHeartbeatCount: 0,
     requiredRecoveryHeartbeats,
   };
@@ -53,6 +55,7 @@ export class ReplayCoordinator {
     return (
       this.#snapshot.state === "queued" ||
       this.#snapshot.state === "running" ||
+      this.#snapshot.state === "failed" ||
       (this.#snapshot.state === "completed" &&
         this.#snapshot.recoveryHeartbeatCount <
           this.#snapshot.requiredRecoveryHeartbeats)
@@ -72,6 +75,17 @@ export class ReplayCoordinator {
       });
     }
 
+    if (
+      this.#snapshot.state === "failed" &&
+      this.#snapshot.nextRetryAt !== null &&
+      this.#now() < this.#snapshot.nextRetryAt
+    ) {
+      return this.#commit({
+        ...this.#snapshot,
+        queuedEventCount: Math.max(this.#snapshot.queuedEventCount, backlog),
+      });
+    }
+
     return this.#commit({
       state: "queued",
       targetPath: "dedupe_then_order",
@@ -80,6 +94,10 @@ export class ReplayCoordinator {
       startedAt: null,
       endedAt: null,
       lastError: null,
+      nextRetryAt: null,
+      consecutiveFailureCount: this.#snapshot.state === "failed"
+        ? this.#snapshot.consecutiveFailureCount
+        : 0,
       recoveryHeartbeatCount: 0,
       requiredRecoveryHeartbeats: this.#config.healthConfirmationHeartbeats,
     });
@@ -109,8 +127,12 @@ export class ReplayCoordinator {
       startedAt: this.#now(),
       endedAt: null,
       lastError: null,
+      nextRetryAt: null,
       recoveryHeartbeatCount: 0,
       requiredRecoveryHeartbeats: this.#config.healthConfirmationHeartbeats,
+      consecutiveFailureCount: this.#snapshot.state === "failed"
+        ? this.#snapshot.consecutiveFailureCount
+        : 0,
     });
   }
 
@@ -164,12 +186,16 @@ export class ReplayCoordinator {
   }
 
   fail(error: string, rowIds: ReadonlyArray<number> = []): ReplaySessionSnapshot {
-    this.#reservoir.resetReplayBatchToPending(rowIds);
+    const now = this.#now();
+    const nextRetryAt = now + this.#config.retryBackoffMs;
+    this.#reservoir.resetReplayBatchToPending(rowIds, nextRetryAt);
     return this.#commit({
       ...this.#snapshot,
       state: "failed",
-      endedAt: this.#now(),
+      endedAt: now,
       lastError: error,
+      nextRetryAt,
+      consecutiveFailureCount: this.#snapshot.consecutiveFailureCount + 1,
     });
   }
 
@@ -180,6 +206,7 @@ export class ReplayCoordinator {
       state: "aborted",
       endedAt: this.#now(),
       lastError: reason,
+      nextRetryAt: null,
     });
   }
 
@@ -190,6 +217,7 @@ export class ReplayCoordinator {
       queuedEventCount: this.#snapshot.deliveredEventCount,
       endedAt: this.#now(),
       lastError: null,
+      nextRetryAt: null,
       recoveryHeartbeatCount: 0,
     });
   }

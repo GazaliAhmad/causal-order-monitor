@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS ingress_events (
   delivery_mode TEXT NOT NULL,
   replay_state TEXT NOT NULL,
   replay_attempts INTEGER NOT NULL DEFAULT 0,
+  retry_not_before_ms INTEGER,
   expires_at_ms INTEGER NOT NULL
 );
 
@@ -25,6 +26,9 @@ CREATE INDEX IF NOT EXISTS idx_ingress_events_expires_at
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_state
   ON ingress_events(replay_state);
+
+CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_retry
+  ON ingress_events(replay_state, retry_not_before_ms);
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_source_path
   ON ingress_events(source_path);
@@ -66,4 +70,17 @@ CREATE TABLE IF NOT EXISTS replay_sessions (
 
 export function applyMonitorSchema(db: InstanceType<typeof Database>): void {
   db.exec(MONITOR_SQLITE_SCHEMA);
+
+  const ingressColumns = db
+    .prepare(`PRAGMA table_info(ingress_events)`)
+    .all() as Array<{ name?: unknown }>;
+  const columnNames = new Set(
+    ingressColumns
+      .map((column) => column.name)
+      .filter((name): name is string => typeof name === "string"),
+  );
+
+  if (!columnNames.has("retry_not_before_ms")) {
+    db.exec(`ALTER TABLE ingress_events ADD COLUMN retry_not_before_ms INTEGER`);
+  }
 }

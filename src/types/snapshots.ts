@@ -21,6 +21,8 @@ export interface MonitorComponentHealthSnapshot {
 export interface ReservoirStats {
   totalPendingRows: number;
   oldestPendingAgeMs: bigint;
+  retryWaitingRows: number;
+  earliestRetryAt: bigint | null;
   pendingRowsBySourcePath: Record<MonitorSourcePath, number>;
   pendingRowsByDeliveryMode: Partial<Record<MonitorDeliveryMode, number>>;
 }
@@ -33,6 +35,8 @@ export interface ReplaySessionSnapshot {
   startedAt: bigint | null;
   endedAt: bigint | null;
   lastError: string | null;
+  nextRetryAt: bigint | null;
+  consecutiveFailureCount: number;
   recoveryHeartbeatCount: number;
   requiredRecoveryHeartbeats: number;
 }
@@ -53,7 +57,12 @@ export interface InspectedMonitorSnapshot {
   unhealthyComponents: MonitorComponent[];
   totalPendingRows: number;
   oldestPendingAgeMs: bigint;
+  retryWaitingRows: number;
+  earliestRetryAt: bigint | null;
   replayState: MonitorReplaySessionState;
   replayQueuedEventCount: number;
   replayDeliveredEventCount: number;
+  replayNextRetryAt: bigint | null;
+  replayConsecutiveFailureCount: number;
+  replayRetryBackoffActive: boolean;
 }

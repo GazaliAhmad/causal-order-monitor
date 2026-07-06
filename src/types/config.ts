@@ -40,6 +40,7 @@ export interface MonitorThrottleConfig {
 export interface MonitorReplayConfig {
   healthConfirmationHeartbeats: number;
   pauseLiveFlowDuringReplay: boolean;
+  retryBackoffMs: bigint;
 }
 
 export interface MonitorConfig {
@@ -100,6 +101,7 @@ export function createDefaultMonitorConfig(): MonitorConfig {
     replay: {
       healthConfirmationHeartbeats: 2,
       pauseLiveFlowDuringReplay: true,
+      retryBackoffMs: 5_000n,
     },
     now: () => BigInt(Date.now()),
   };

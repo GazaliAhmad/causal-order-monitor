@@ -1,4 +1,19 @@
-fix: stabilize monitor replay recovery and document testing integration# Changelog
+# Changelog
+
+## v0.0.9
+
+- expanded `ReservoirStats` so retry-waiting backlog is visible through `retryWaitingRows` and `earliestRetryAt`
+- expanded `inspectMonitorSnapshot()` so replay retry timing, consecutive failure streak, and active backoff state are obvious at a glance
+- verified the richer inspection surface against the existing `test:replay-safety` failure-path run
+- aligned README and roadmap language with the current `v0.0.9` runtime, validation, and operator-inspection boundary
+
+## v0.0.8
+
+- hardened replay failure handling with a retry backoff so replay does not immediately thrash back into another attempt when downstream recovery is still unstable
+- kept the replay gate closed while failed backlog is waiting for retry so live flow does not reopen into a mixed backlog state during replay recovery
+- added replay snapshot evidence for `nextRetryAt` and `consecutiveFailureCount` so retry behavior is inspectable in runtime state and persisted replay session records
+- hardened SQLite prune behavior so retry-waiting replay rows survive the rolling buffer window and only dead-letter at the hard retention cutoff
+- added a repo-local `test:replay-safety` script that exercises replay failure, retry backoff, rolling-window prune safety, and hard-cutoff dead-letter behavior end to end
 
 ## v0.0.7
 

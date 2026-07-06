@@ -18,6 +18,7 @@ interface ReservoirIngressOptions {
   deliveryMode: MonitorDeliveryMode;
   sourceStreamId?: string | null;
   replayState?: ReservoirReplayState;
+  retryNotBeforeMs?: bigint | null;
   monitorIngestAt?: bigint;
   fullOutageActive?: boolean;
 }
@@ -141,6 +142,7 @@ export class SQLiteReservoir {
           delivery_mode,
           replay_state,
           replay_attempts,
+          retry_not_before_ms,
           expires_at_ms
         ) VALUES (
           @id,
@@ -157,6 +159,7 @@ export class SQLiteReservoir {
           @delivery_mode,
           @replay_state,
           @replay_attempts,
+          @retry_not_before_ms,
           @expires_at_ms
         )`,
       )
@@ -175,6 +178,10 @@ export class SQLiteReservoir {
         delivery_mode: options.deliveryMode,
         replay_state: replayState,
         replay_attempts: 0,
+        retry_not_before_ms:
+          options.retryNotBeforeMs === null || options.retryNotBeforeMs === undefined
+            ? null
+            : toSqlBigInt(options.retryNotBeforeMs),
         expires_at_ms: toSqlBigInt(expiresAt),
       });
 
@@ -244,6 +251,8 @@ export class SQLiteReservoir {
         error_count: snapshot.lastError ? 1 : 0,
         details_json: serializeJson({
           lastError: snapshot.lastError,
+          nextRetryAt: snapshot.nextRetryAt,
+          consecutiveFailureCount: snapshot.consecutiveFailureCount,
           recoveryHeartbeatCount: snapshot.recoveryHeartbeatCount,
           requiredRecoveryHeartbeats: snapshot.requiredRecoveryHeartbeats,
         }),
@@ -293,6 +302,7 @@ export class SQLiteReservoir {
 
     const claim = this.#db.transaction(
       (
+        nowMs: bigint,
         batchLimit: number,
         nextDeliveryMode: MonitorDeliveryMode,
       ): ReservoirReplayEntry[] => {
@@ -306,10 +316,11 @@ export class SQLiteReservoir {
                replay_attempts
              FROM ingress_events
              WHERE replay_state = 'pending'
+               AND (retry_not_before_ms IS NULL OR retry_not_before_ms <= ?)
              ORDER BY monitor_ingest_at_ms ASC, rowid ASC
              LIMIT ?`,
           )
-          .all(batchLimit) as Array<{
+          .all(toSqlBigInt(nowMs), batchLimit) as Array<{
           row_id: number;
           payload_json: string;
           source_path: MonitorSourcePath;
@@ -329,6 +340,7 @@ export class SQLiteReservoir {
             `UPDATE ingress_events
              SET replay_state = 'replaying',
                  replay_attempts = replay_attempts + 1,
+                 retry_not_before_ms = NULL,
                  delivery_mode = ?
              WHERE rowid IN (${placeholders})`,
           )
@@ -345,40 +357,53 @@ export class SQLiteReservoir {
       },
     );
 
-    return claim(limit, deliveryMode);
+    return claim(this.#now(), limit, deliveryMode);
   }
 
   markReplayBatchDelivered(rowIds: ReadonlyArray<number>): number {
-    return this.#updateReplayRows(rowIds, "delivered");
+    return this.#updateReplayRows(rowIds, "delivered", null);
   }
 
   markIngressRowsDelivered(rowIds: ReadonlyArray<number>): number {
-    return this.#updateReplayRows(rowIds, "delivered");
+    return this.#updateReplayRows(rowIds, "delivered", null);
   }
 
-  resetReplayBatchToPending(rowIds: ReadonlyArray<number>): number {
-    return this.#updateReplayRows(rowIds, "pending");
+  resetReplayBatchToPending(
+    rowIds: ReadonlyArray<number>,
+    retryNotBeforeMs?: bigint | null,
+  ): number {
+    return this.#updateReplayRows(rowIds, "pending", retryNotBeforeMs);
   }
 
   deadLetterReplayBatch(rowIds: ReadonlyArray<number>): number {
-    return this.#updateReplayRows(rowIds, "dead_letter");
+    return this.#updateReplayRows(rowIds, "dead_letter", null);
   }
 
   pruneExpired(fullOutageActive = false): PruneResult {
     const now = this.#now();
-    const retentionWindowMs = fullOutageActive
+    const rollingWindowMs = fullOutageActive
       ? this.#config.fullOutageMaxWindowMs
       : this.#config.rollingBufferWindowMs;
-    const cutoff = now - retentionWindowMs;
+    const rollingCutoff = now - rollingWindowMs;
+    const hardCutoff = now - this.#config.fullOutageMaxWindowMs;
 
     const markResult = this.#db
       .prepare(
         `UPDATE ingress_events
          SET replay_state = 'dead_letter'
          WHERE replay_state IN ('pending')
-           AND monitor_ingest_at_ms <= ?`,
+           AND (
+             monitor_ingest_at_ms <= @hard_cutoff
+             OR (
+               retry_not_before_ms IS NULL
+               AND monitor_ingest_at_ms <= @rolling_cutoff
+             )
+           )`,
       )
-      .run(toSqlBigInt(cutoff));
+      .run({
+        hard_cutoff: toSqlBigInt(hardCutoff),
+        rolling_cutoff: toSqlBigInt(rollingCutoff),
+      });
 
     const deleteResult = this.#db
       .prepare(
@@ -410,6 +435,21 @@ export class SQLiteReservoir {
          WHERE replay_state IN ('pending', 'replaying')`,
       )
       .get() as { oldest?: unknown };
+
+    const retryWaitingRow = this.#db
+      .prepare(
+        `SELECT
+           COUNT(*) AS count,
+           MIN(retry_not_before_ms) AS earliest_retry_at
+         FROM ingress_events
+         WHERE replay_state = 'pending'
+           AND retry_not_before_ms IS NOT NULL
+           AND retry_not_before_ms > ?`,
+      )
+      .get(toSqlBigInt(this.#now())) as {
+      count?: unknown;
+      earliest_retry_at?: unknown;
+    };
 
     const bySourceRows = this.#db
       .prepare(
@@ -446,10 +486,13 @@ export class SQLiteReservoir {
     const oldestPendingAt = parseBigInt(oldestPendingRow.oldest);
     const oldestPendingAgeMs =
       oldestPendingAt === 0n ? 0n : this.#now() - oldestPendingAt;
+    const earliestRetryAtRaw = parseBigInt(retryWaitingRow.earliest_retry_at);
 
     return {
       totalPendingRows: parseCount(totalPendingRow.count),
       oldestPendingAgeMs,
+      retryWaitingRows: parseCount(retryWaitingRow.count),
+      earliestRetryAt: earliestRetryAtRaw === 0n ? null : earliestRetryAtRaw,
       pendingRowsBySourcePath: sourceCounts,
       pendingRowsByDeliveryMode: deliveryCounts,
     };
@@ -466,6 +509,7 @@ export class SQLiteReservoir {
   #updateReplayRows(
     rowIds: ReadonlyArray<number>,
     nextState: ReservoirReplayState,
+    retryNotBeforeMs?: bigint | null,
   ): number {
     if (rowIds.length === 0) {
       return 0;
@@ -475,10 +519,17 @@ export class SQLiteReservoir {
     const result = this.#db
       .prepare(
         `UPDATE ingress_events
-         SET replay_state = ?
+         SET replay_state = ?,
+             retry_not_before_ms = ?
          WHERE rowid IN (${placeholders})`,
       )
-      .run(nextState, ...rowIds);
+      .run(
+        nextState,
+        retryNotBeforeMs === null || retryNotBeforeMs === undefined
+          ? null
+          : toSqlBigInt(retryNotBeforeMs),
+        ...rowIds,
+      );
     return result.changes;
   }
 }

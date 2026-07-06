@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.0.7",
+  "version": "0.0.9",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -49,11 +49,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run pack:check",
+    "ci": "npm run check && npm run test:replay-safety && npm run pack:check",
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
     "publish:dry-run": "npm publish --dry-run --access public",
-    "release:check": "npm run ci && npm run publish:dry-run"
+    "release:check": "npm run ci && npm run publish:dry-run",
+    "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1"
