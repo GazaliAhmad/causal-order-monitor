@@ -1,0 +1,71 @@
+{
+  "name": "@causal-order/monitor",
+  "version": "0.0.7",
+  "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
+  "author": "Gazali Ahmad",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GazaliAhmad/causal-order-monitor.git"
+  },
+  "homepage": "https://github.com/GazaliAhmad/causal-order-monitor#readme",
+  "bugs": {
+    "url": "https://github.com/GazaliAhmad/causal-order-monitor/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./.build/src/index.js",
+  "types": "./.build/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./.build/src/index.d.ts",
+      "import": "./.build/src/index.js"
+    }
+  },
+  "files": [
+    ".build/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "causal-order",
+    "monitor",
+    "sqlite",
+    "buffering",
+    "replay",
+    "failover",
+    "recovery",
+    "observability",
+    "event-streams",
+    "distributed-systems"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "ci": "npm run check && npm run pack:check",
+    "prepack": "npm run build",
+    "pack:check": "npm pack --dry-run",
+    "publish:dry-run": "npm publish --dry-run --access public",
+    "release:check": "npm run ci && npm run publish:dry-run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1"
+  },
+  "peerDependencies": {
+    "@causal-order/dedupe": "^1.1.1",
+    "@causal-order/transport": "^0.1.2",
+    "causal-order": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.9.2",
+    "typescript": "^6.0.3"
+  }
+}
