@@ -1,12 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.0.9
 
 - added `publish:prepare` metadata syncing so the exported package version and README release markers stay aligned with `package.json`
 - moved npm dry-run scripts onto a repo-local cache path and added `prepublishOnly` validation to harden the publish flow
-
-## v0.0.9
-
 - expanded `ReservoirStats` so retry-waiting backlog is visible through `retryWaitingRows` and `earliestRetryAt`
 - expanded `inspectMonitorSnapshot()` so replay retry timing, consecutive failure streak, and active backoff state are obvious at a glance
 - verified the richer inspection surface against the existing `test:replay-safety` failure-path run
