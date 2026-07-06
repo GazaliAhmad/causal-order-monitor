@@ -49,11 +49,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:replay-safety && npm run pack:check",
+    "ci": "npm run check && npm run test:inspect-snapshot && npm run test:replay-safety && npm run pack:check",
     "prepack": "npm run build",
     "pack:check": "npm pack --dry-run",
     "publish:dry-run": "npm publish --dry-run --access public",
     "release:check": "npm run ci && npm run publish:dry-run",
+    "test:inspect-snapshot": "npm run build && node scripts/inspect-snapshot.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
   },
   "dependencies": {

@@ -6,6 +6,11 @@
 - expanded `inspectMonitorSnapshot()` so replay retry timing, consecutive failure streak, and active backoff state are obvious at a glance
 - verified the richer inspection surface against the existing `test:replay-safety` failure-path run
 - aligned README and roadmap language with the current `v0.0.9` runtime, validation, and operator-inspection boundary
+- enriched `inspectMonitorSnapshot()` with derived operator-facing state instead of only mirroring raw replay and reservoir fields
+- added inspection signals for `operationalState`, live-flow gate status and reason, replay-ready rows, backlog remaining rows, replay progress percentage, retry delay, and operator-attention requirement
+- added `MonitorRuntime.getInspectedSnapshot()` so downstream consumers can read the derived operator summary directly from the runtime
+- added `TransportMonitorAdapter.getInspectedSnapshot()` so adapter users do not need to compose the runtime and inspection helper manually
+- added repo-local `test:inspect-snapshot` coverage to verify the derived inspection summary through buffering and replay-retry states and to prove the direct runtime/adapter inspected snapshot path stays identical to `inspectMonitorSnapshot(getSnapshot())`
 
 ## v0.0.8
 

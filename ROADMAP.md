@@ -18,7 +18,7 @@ The goal is to make `@causal-order/monitor` a deployable recovery envelope aroun
 
 ## Current Status
 
-- Version `v0.0.9` is now the active implementation baseline for this repo.
+- Version `v0.0.9` is the active implementation baseline for this repo.
 - The package foundation exists:
   - `package.json`
   - TypeScript build config
@@ -38,10 +38,13 @@ The goal is to make `@causal-order/monitor` a deployable recovery envelope aroun
   - replay coordination implemented
   - replay retry backoff and failure evidence implemented
   - replay retry inspection surface implemented
+  - derived operator-facing inspection state implemented for replay gating, retry delay, and backlog posture
+  - runtime and transport adapter now expose the inspected operator summary directly
   - transport-facing adapter seam added
   - testing scenario catalog added for handoff into `@causal-order/testing`
   - `monitor-order-outage` has now been validated through healthy flow, `order_buffer_only`, replay-through-recovery, and empty-reservoir completion
   - repo-local replay safety validation now proves retry-waiting rows are preserved through rolling prune and only dead-letter at the hard cutoff
+  - repo-local inspection validation now proves the derived inspection summary matches buffering and replay-retry states
 
 ## Version `v0.0.9` Decisions
 
@@ -52,6 +55,9 @@ These are fixed for the first implementation line:
 - replay should always return through restored `/dedupe`
 - replay failure should back off briefly before retry and keep live flow gated while backlog recovery is still unsettled
 - retry-waiting backlog should be visible directly in runtime stats and snapshot inspection
+- inspection should describe operator posture directly, not just expose raw retry fields
+- downstream consumers should be able to obtain the inspected operator summary directly from runtime surfaces
+- no further monitor features should be added before real wall-clock validation
 
 These decisions are intentionally conservative.
 They reduce branchy recovery semantics and make the first release easier to reason about under pressure.
@@ -294,25 +300,28 @@ Version `v0.0.9` is done when:
 12. replay retry timing and consecutive failure evidence are visible in runtime state
 13. retry-waiting backlog is visible directly from reservoir stats and snapshot inspection helpers
 14. a repo-local failure-path test proves retry-waiting rows survive rolling prune and do not replay before the retry horizon
+15. snapshot inspection derives operator-facing live-flow gate, retry-delay, and replay posture summaries without requiring consumers to rebuild that logic themselves
+16. runtime-facing consumers can retrieve the same inspected operator summary directly from `MonitorRuntime` or `TransportMonitorAdapter`
 
-## Next Iteration After `v0.0.9`
+## `v0.1.0` Validation Goal
 
-The first post-`v0.0.9` line should focus on stack-level validation and operator evidence, not dramatic scope expansion.
+The next milestone after `v0.0.9` should be `v0.1.0`, and it should focus on real wall-clock validation rather than feature expansion.
 
-Likely next themes:
+Required validation themes:
 
-- carry replay retry and backoff visibility more deeply into `@causal-order/testing` run summaries and comparisons
-- run longer harness scenarios that make the real `4h` rolling window and `6h` hard ceiling less synthetic
-- add clearer reporting for retry-waiting backlog peaks, replay lag, and catch-up completion time
-- refine health heuristics for degraded versus offline states without making routing semantics branchy
-- improve replay throughput controls only after the retry/backoff behavior is externally validated enough
+- real wall-clock rolling-window retention behavior
+- real wall-clock hard-cutoff behavior
+- real wall-clock replay retry/backoff timing
+- real outage/recovery runs through `@causal-order/testing`
+- artifact review of backlog growth, retry waiting, replay drain, and prune decisions
 
-It should not immediately jump to:
+Until `v0.1.0` is completed, it should not jump to:
 
 - dashboard-first scope
 - multi-backend storage support
 - permanent archival persistence
 - distributed monitor federation
+- additional monitor convenience/API features
 
 ## Longer Term
 

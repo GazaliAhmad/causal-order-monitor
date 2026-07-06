@@ -3,6 +3,7 @@ import {
   type MonitorConfig,
 } from "../types/config.js";
 import { HealthTracker } from "../health/HealthTracker.js";
+import { inspectMonitorSnapshot } from "../inspect/inspectMonitorSnapshot.js";
 import { DeliveryRouter } from "../routing/DeliveryRouter.js";
 import { ReplayCoordinator } from "../replay/ReplayCoordinator.js";
 import { SQLiteReservoir } from "../storage/SQLiteReservoir.js";
@@ -16,6 +17,7 @@ import type {
   MonitorThrottleTier,
 } from "../types/events.js";
 import type {
+  InspectedMonitorSnapshot,
   MonitorSnapshot,
   ReplaySessionSnapshot,
   ReservoirStats,
@@ -111,6 +113,10 @@ export class MonitorRuntime {
       reservoir: this.getReservoirStats(),
       replay: this.getReplaySnapshot(),
     };
+  }
+
+  getInspectedSnapshot(): InspectedMonitorSnapshot {
+    return inspectMonitorSnapshot(this.getSnapshot());
   }
 
   getHealthSnapshot() {

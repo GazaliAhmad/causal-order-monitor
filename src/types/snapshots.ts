@@ -50,19 +50,35 @@ export interface MonitorSnapshot {
   replay: ReplaySessionSnapshot;
 }
 
+export type MonitorOperationalState =
+  | "healthy_live"
+  | "degraded_live"
+  | "buffering_only"
+  | "replay_draining"
+  | "replay_retry_waiting"
+  | "recovery_confirming";
+
 export interface InspectedMonitorSnapshot {
   generatedAt: bigint;
+  operationalState: MonitorOperationalState;
   routingMode: MonitorRoutingMode;
   throttleTier: MonitorThrottleTier;
   unhealthyComponents: MonitorComponent[];
+  requiresOperatorAttention: boolean;
+  liveFlowGateClosed: boolean;
+  liveFlowGateReason: string | null;
   totalPendingRows: number;
   oldestPendingAgeMs: bigint;
+  replayReadyRows: number;
   retryWaitingRows: number;
   earliestRetryAt: bigint | null;
   replayState: MonitorReplaySessionState;
+  replayBacklogRemainingRows: number;
+  replayProgressPercent: number | null;
   replayQueuedEventCount: number;
   replayDeliveredEventCount: number;
   replayNextRetryAt: bigint | null;
+  replayRetryDelayMs: bigint | null;
   replayConsecutiveFailureCount: number;
   replayRetryBackoffActive: boolean;
 }

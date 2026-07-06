@@ -34,6 +34,7 @@ export {
   type MonitorThrottleTier,
 } from "./types/events.js";
 export {
+  type MonitorOperationalState,
   type InspectedMonitorSnapshot,
   type MonitorComponentHealthSnapshot,
   type MonitorSnapshot,

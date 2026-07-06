@@ -7,6 +7,7 @@ import type {
   MonitorIngressEvent,
 } from "../types/events.js";
 import type {
+  InspectedMonitorSnapshot,
   MonitorSnapshot,
   ReplaySessionSnapshot,
 } from "../types/snapshots.js";
@@ -73,6 +74,10 @@ export class TransportMonitorAdapter {
 
   getSnapshot(): MonitorSnapshot {
     return this.#runtime.getSnapshot();
+  }
+
+  getInspectedSnapshot(): InspectedMonitorSnapshot {
+    return this.#runtime.getInspectedSnapshot();
   }
 
   getReplaySnapshot(): ReplaySessionSnapshot {

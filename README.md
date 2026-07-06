@@ -2,7 +2,7 @@
 
 Health-aware buffering, replay, and operator monitoring layer for the `causal-order` stack.
 
-Status: `v0.0.9` active implementation.
+Status: `v0.0.9` implementation baseline. `v0.1.0` is reserved for real wall-clock validation.
 
 `@causal-order/monitor` now has a working runtime, SQLite reservoir, health tracking, routing, throttling, replay coordination, and transport-facing adapter seams. The current line also includes replay retry backoff hardening and clearer retry inspection for operators and harness tooling.
 
@@ -32,6 +32,8 @@ The current line includes:
 - replay retry backoff with persisted retry horizon and failure streak evidence
 - retry-aware pruning so retry-waiting rows survive the rolling window and only dead-letter at the hard cutoff
 - snapshot inspection that surfaces retry-waiting backlog, earliest retry horizon, replay next retry time, and consecutive replay failure count
+- derived operator-facing inspection state for live-flow gating, replay-ready backlog, retry delay, and quick recovery posture reading
+- direct inspected snapshot access from `MonitorRuntime` and `TransportMonitorAdapter`
 
 ## Package Shape
 
@@ -47,6 +49,11 @@ Current public exports include:
 - `TransportMonitorAdapter`
 - `inspectMonitorSnapshot()`
 - monitor harness metadata for `@causal-order/testing`
+
+The runtime-facing inspection path is now available directly through:
+
+- `MonitorRuntime.getInspectedSnapshot()`
+- `TransportMonitorAdapter.getInspectedSnapshot()`
 
 Current snapshot and inspection surfaces include:
 
@@ -70,8 +77,11 @@ The current implementation follows these conservative rules:
 This repo currently ships a local replay safety validation path:
 
 - `npm run build`
+- `npm run test:inspect-snapshot`
 - `npm run test:replay-safety`
 - `npm run ci`
+
+`test:inspect-snapshot` verifies that derived inspection output correctly reflects buffering-only and replay-retry states.
 
 `test:replay-safety` verifies that:
 
@@ -85,11 +95,15 @@ The wider ecosystem validation path continues in `@causal-order/testing`, where 
 
 This is still an implementation-stage package, not a long-term stable contract line yet.
 
-What exists now is strong enough for ongoing integration and harness validation, but the next work should stay focused on:
+What exists now is strong enough for integration and harness validation, but no new monitor features should be added before real wall-clock testing is done.
+
+The next milestone is `v0.1.0`, and it should be a validation milestone rather than another feature milestone.
+
+Until then, the focus should stay on:
 
 - stronger stack-level failure-path testing in `@causal-order/testing`
-- richer operator/reporting summaries around replay retry state
-- longer-run retention and recovery validation
+- real wall-clock retention and replay timing validation
+- artifact review of backlog growth, retry waiting, drain, and prune behavior
 
 ## Local Design Notes
 
