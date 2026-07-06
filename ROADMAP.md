@@ -18,6 +18,7 @@ The goal is to make `@causal-order/monitor` a deployable recovery envelope aroun
 
 ## Current Status
 
+- Status: `v0.0.9` implementation baseline. `v0.1.0` is reserved for real wall-clock validation.
 - Version `v0.0.9` is the active implementation baseline for this repo.
 - The package foundation exists:
   - `package.json`

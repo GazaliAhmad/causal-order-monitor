@@ -22,8 +22,8 @@ const replacements = [
     description: "README release markers",
     update(source) {
       let next = source.replace(
-        /Status: `v[^`]+` implementation baseline\./,
-        `Status: \`v${version}\` implementation baseline.`,
+        /Status: `v[^`]+` published to npm\./,
+        `Status: \`v${version}\` published to npm.`,
       );
       next = next.replace(/## Version `v[^`]+`/, `## Version \`v${version}\``);
       return next;

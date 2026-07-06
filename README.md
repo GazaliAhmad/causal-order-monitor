@@ -2,7 +2,7 @@
 
 Health-aware buffering, replay, and operator monitoring for the `causal-order` stack.
 
-Status: `v0.0.9` implementation baseline. `v0.1.0` is reserved for real wall-clock validation.
+Status: `v0.0.9` published to npm.
 
 `@causal-order/monitor` sits between transport ingestion and downstream delivery so your pipeline can keep accepting events, preserve backlog, and recover in a controlled way when `@causal-order/dedupe` or `causal-order` becomes unavailable.
 
@@ -24,7 +24,7 @@ npm install @causal-order/monitor better-sqlite3 causal-order @causal-order/dedu
 
 ## Stability
 
-This release provides the current implementation surface and is suitable for integration and harness evaluation, but it has not yet completed real wall-clock validation. The planned `v0.1.0` release is intended to focus on testing and validation rather than new features.
+This `v0.0.9` release is the published npm package for the current monitor runtime, replay, routing, and operator-inspection surface.
 
 ## When To Use It
 
