@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.1
+
+- replaced `better-sqlite3` with the built-in `node:sqlite` backend
+- raised the package Node requirement to `>=22.13.0` so SQLite support does not depend on `--experimental-sqlite`
+- made SQLite reservoir startup fail fast with a clearer path-specific deployment error when the configured database location is not suitable for local writes
+- documented recommended server-local SQLite paths and warned against read-only, synced, or unvalidated network-mounted filesystems
+- added `CAUSAL_ORDER_MONITOR_CONFIG` support with explicit precedence between inline config, env-selected config files, default `monitor.config.json`, and package defaults
+- added repo validation proving env-driven config resolution and override precedence
+- added convenience creators for booting `MonitorRuntime` and `TransportMonitorAdapter` directly from file or environment-backed config
+- added repo validation proving the new bootstrap helpers preserve the existing explicit constructor path
+- added a deterministic 8-node threshold validation covering the `4h` rolling window, `6h` full-outage ceiling, and the intended HTTP `202` / `503` decision mapping
+- aligned README and roadmap guidance with the current HTTP ingress contract, prune-driven retention semantics, and `v0.1.1` bootstrap surface
+- refactored SQLite prune enforcement into batched dead-letter and delete passes so large expired cohorts no longer rely on one oversized statement
+- added `reservoir.pruneBatchSize` configuration and repo validation proving batched prune keeps the same retention outcomes
+- added explicit README guidance for sizing host disk I/O throughput during sustained `4h` to `6h` `full_outage_buffer` periods
+- clarified in the README that the `6h` ceiling is prune-driven and does not itself force immediate ingress rejection
+- added a direct retention/admission contract test proving `202` vs `503`, no `429`, prune-driven hard cutoff, and observable `dead_letter` rows
+- changed the default monitor runtime clock to a monotonic-backed wall-clock so in-process timing does not move backward when host wall-clock time shifts
+- added an 8-node operational harness suite runner plus aggregate validation summaries for smoke and fuller production-shaped monitor runs
+- added a Node 22 CI smoke pass for the operational harness suite
+
 ## v0.1.0
 
 - switched the default SQLite reservoir from in-memory storage to an on-disk package path at `./.causal-order-monitor/monitor.sqlite`

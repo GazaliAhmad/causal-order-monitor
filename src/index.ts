@@ -6,16 +6,37 @@ export const monitorImplementationStatus: MonitorImplementationStatus =
   "replay_operational";
 
 export {
+  createDefaultMonitorNow,
   createDefaultMonitorConfig,
   type MonitorComponentHealthConfig,
   type MonitorConfig,
   type MonitorHealthConfig,
+  type MonitorJsonComponentHealthConfig,
+  type MonitorJsonConfig,
+  type MonitorJsonDuration,
+  type MonitorJsonHealthConfig,
+  type MonitorJsonReplayConfig,
+  type MonitorJsonReservoirConfig,
+  type MonitorJsonThrottleConfig,
+  type MonitorJsonThrottleTierConfig,
+  type MonitorJsonTransportConfig,
   type MonitorReplayConfig,
   type MonitorReservoirConfig,
   type MonitorThrottleConfig,
   type MonitorThrottleTierConfig,
   type MonitorTransportConfig,
 } from "./types/config.js";
+export {
+  DEFAULT_MONITOR_CONFIG_FILE,
+  MONITOR_CONFIG_ENV_VAR,
+  loadMonitorConfigFromEnvironment,
+  loadMonitorConfigFile,
+  parseMonitorConfigJson,
+  type MonitorConfigOverride,
+  resolveMonitorConfigFromEnvironment,
+  resolveMonitorConfig,
+  type MonitorConfigEnvironmentOptions,
+} from "./config.js";
 export {
   type MonitorClock,
   type MonitorComponent,
@@ -45,13 +66,19 @@ export { inspectMonitorSnapshot } from "./inspect/inspectMonitorSnapshot.js";
 export { HealthTracker } from "./health/HealthTracker.js";
 export { ReplayCoordinator, type ReplayBatch } from "./replay/ReplayCoordinator.js";
 export { DeliveryRouter } from "./routing/DeliveryRouter.js";
-export { createMonitorRuntime } from "./runtime/createMonitorRuntime.js";
+export {
+  createMonitorRuntime,
+  createMonitorRuntimeFromEnvironment,
+  createMonitorRuntimeFromFile,
+} from "./runtime/createMonitorRuntime.js";
 export { MonitorRuntime } from "./runtime/MonitorRuntime.js";
 export {
   SQLiteReservoir,
   type ReservoirReplayEntry,
 } from "./storage/SQLiteReservoir.js";
 export {
+  createTransportMonitorAdapterFromEnvironment,
+  createTransportMonitorAdapterFromFile,
   TransportMonitorAdapter,
   type MonitorAdapterForwardContext,
   type MonitorAdapterHandlers,

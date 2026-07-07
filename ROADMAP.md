@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the shipped `v0.1.0` state of `@causal-order/monitor`.
+This file records the shipped `v0.1.0` baseline and the active `v0.1.1` follow-on work for `@causal-order/monitor`.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -16,10 +16,10 @@ This file records the shipped `v0.1.0` state of `@causal-order/monitor`.
 
 ## Current Release
 
-- Status: `v0.1.0` is the current package release.
-- Package metadata, README, changelog, and npm publishing workflow are aligned to `v0.1.0`.
-- The package exports a real runtime surface instead of a placeholder package shell.
-- The monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, and operator-facing inspection output.
+- Status: `v0.1.0` is the current published package release.
+- The `v0.1.0` package exports a real runtime surface instead of a placeholder package shell.
+- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, and operator-facing inspection output.
+- The current repo state contains additional `v0.1.1` work that has not yet been described here as the published npm baseline.
 
 ## Package Intent
 
@@ -126,3 +126,74 @@ the stream went weird for a while,
 then it came back,
 and we hope nothing important got lost or replayed incorrectly
 ```
+
+## `ver0.1.1` Follow-On Scope
+
+`ver0.1.1` should pick up the next layer of package usability and release hardening after the current `v0.1.0` testing work is accepted.
+
+Completed in the current repo state:
+
+- first-class JSON config support so deployers can provide monitor settings from a file instead of only constructing config in code
+- optional environment-based config path support for deployment-friendly bootstrapping
+- safe merge behavior from JSON config onto package defaults
+- convenience runtime and adapter creators for file-backed or environment-backed startup
+- operational guidance for deep-outage SQLite write pressure and startup-path suitability
+- deterministic 8-node validation for the `4h` rolling window, `6h` hard ceiling, and `202` / `503` ingress contract
+- prune hardening so retention-ceiling cleanup happens in manageable batched passes instead of one large lock-heavy sweep
+- direct retention/admission contract validation proving `202`, `503`, no `429`, prune-driven cutoff enforcement, and dead-letter evidence
+- operational harness suite runners and aggregate validation summaries for repeatable 8-node smoke and fuller production-shaped runs
+
+Still planned in the `v0.1.1` line:
+
+- broader long-duration validation durations beyond the new smoke/full harness suite defaults
+
+Planned scope:
+
+- first-class JSON config support so deployers can provide monitor settings from a file instead of only constructing config in code
+- optional environment-based config path support for deployment-friendly bootstrapping
+- safe merge behavior from JSON config onto package defaults
+- operational guidance for deep-outage SQLite write pressure so deployers size host storage and I/O for worst-case buffered ingress
+- prune hardening so retention-ceiling cleanup happens in manageable batches instead of one large lock-heavy sweep
+
+Concrete targets:
+
+- support a package-level config file flow such as `monitor.config.json`
+- support an override path such as `CAUSAL_ORDER_MONITOR_CONFIG`
+- keep the JSON surface limited to deployer-meaningful settings rather than exposing unstable internal structure
+- keep the `v0.1.0` long-duration retention checks as explicit release evidence instead of hand-waving from scaled short-run confidence
+- document that deep `full_outage_buffer` periods can turn peak ingress into sustained SQLite write load
+- batch prune and purge work so large cohorts aging past `fullOutageMaxWindowMs` do not create avoidable SQLite contention spikes
+
+Acceptance themes:
+
+- a deployer can configure the package without writing custom glue code first
+- the roadmap no longer depends on “we ran it manually once” as the main release proof
+- `4h` rolling-window and `6h` hard-cap behavior are backed by direct duration testing, not only extrapolation
+- deployers have explicit guidance on outage-time disk throughput expectations
+- retention enforcement is operationally safe under large backlog cliffs, not just logically correct
+
+Current evidence already added in repo:
+
+- JSON config parsing and validation
+- env-driven config resolution with explicit precedence
+- runtime and adapter boot helpers for file/env config
+- startup SQLite-path failure guidance
+- deterministic 8-node threshold validation with artifact output
+
+Retention semantics to preserve and document:
+
+- the monitor does not start hard-rejecting ingress immediately when the SQLite reservoir reaches the `fullOutageMaxWindowMs` ceiling
+- it keeps accepting and buffering ingress, while returning routing decisions such as `buffer_only` or `pause` as advisory backpressure signals
+- it stops live forwarding when the routing state requires it
+- it relies on reservoir pruning to age out old unacknowledged rows by marking them `dead_letter` once they pass the hard cutoff
+- this behavior is therefore closer to “drop older buffered rows once they age past the ceiling” than “throw immediate rejection states to force upstream throttling”
+- the caveat is that this is not rolling eviction on every ingest; the cutoff is enforced when pruning runs
+
+Ingress HTTP semantics to preserve and document:
+
+- `accept` -> `202 Accepted`
+- `buffer_only` -> `202 Accepted`
+- `pause` -> `503 Service Unavailable`
+- if the event was accepted into the monitor, even if it was only buffered in SQLite, the ingress contract should return `202`
+- if the monitor is refusing admission because it is in a protective stop state, the ingress contract should return `503`
+- this mapping should not use `429 Too Many Requests` for normal monitor buffering or protective-stop semantics

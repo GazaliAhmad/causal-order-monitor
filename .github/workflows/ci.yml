@@ -28,3 +28,7 @@ jobs:
 
       - name: Run CI checks
         run: npm run ci
+
+      - name: Run Monitor Operational Smoke
+        if: matrix.node-version == 22
+        run: npm run test:monitor-operational-smoke

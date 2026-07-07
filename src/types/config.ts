@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 
 import type { MonitorThrottleTier } from "./events.js";
 
+export const DEFAULT_MONITOR_CONFIG_FILE = "monitor.config.json";
+
 const DEFAULT_MONITOR_DB_PATH = resolve(
   ".causal-order-monitor",
   "monitor.sqlite",
@@ -12,6 +14,7 @@ export interface MonitorReservoirConfig {
   rollingBufferWindowMs: bigint;
   fullOutageMaxWindowMs: bigint;
   pruneIntervalMs: bigint;
+  pruneBatchSize: number;
 }
 
 export interface MonitorTransportConfig {
@@ -59,6 +62,77 @@ export interface MonitorConfig {
   now?: () => bigint;
 }
 
+export function createDefaultMonitorNow(): () => bigint {
+  const wallClockBaseMs = BigInt(Date.now());
+  const monotonicBaseNs = process.hrtime.bigint();
+  let lastEmittedMs = wallClockBaseMs;
+
+  return () => {
+    const monotonicElapsedMs =
+      (process.hrtime.bigint() - monotonicBaseNs) / 1_000_000n;
+    const candidateMs = wallClockBaseMs + monotonicElapsedMs;
+    if (candidateMs < lastEmittedMs) {
+      return lastEmittedMs;
+    }
+    lastEmittedMs = candidateMs;
+    return candidateMs;
+  };
+}
+
+export type MonitorJsonDuration = number | string;
+
+export interface MonitorJsonReservoirConfig {
+  databasePath?: string;
+  rollingBufferWindowMs?: MonitorJsonDuration;
+  fullOutageMaxWindowMs?: MonitorJsonDuration;
+  pruneIntervalMs?: MonitorJsonDuration;
+  pruneBatchSize?: number;
+}
+
+export interface MonitorJsonTransportConfig {
+  heartbeatGraceMs?: MonitorJsonDuration;
+  reconnectBurstWindowMs?: MonitorJsonDuration;
+  sourceLabel?: string;
+}
+
+export interface MonitorJsonComponentHealthConfig {
+  degradedAfterMs?: MonitorJsonDuration;
+  offlineAfterMs?: MonitorJsonDuration;
+}
+
+export interface MonitorJsonHealthConfig {
+  transport?: MonitorJsonComponentHealthConfig;
+  dedupe?: MonitorJsonComponentHealthConfig;
+  causalOrder?: MonitorJsonComponentHealthConfig;
+}
+
+export interface MonitorJsonThrottleTierConfig {
+  maxEventsPerSecond?: number;
+  batchSize?: number;
+}
+
+export interface MonitorJsonThrottleConfig {
+  open?: MonitorJsonThrottleTierConfig;
+  slow?: MonitorJsonThrottleTierConfig;
+  verySlow?: MonitorJsonThrottleTierConfig;
+  paused?: MonitorJsonThrottleTierConfig;
+  defaultTier?: MonitorThrottleTier;
+}
+
+export interface MonitorJsonReplayConfig {
+  healthConfirmationHeartbeats?: number;
+  pauseLiveFlowDuringReplay?: boolean;
+  retryBackoffMs?: MonitorJsonDuration;
+}
+
+export interface MonitorJsonConfig {
+  reservoir?: MonitorJsonReservoirConfig;
+  transport?: MonitorJsonTransportConfig;
+  health?: MonitorJsonHealthConfig;
+  throttle?: MonitorJsonThrottleConfig;
+  replay?: MonitorJsonReplayConfig;
+}
+
 export function createDefaultMonitorConfig(): MonitorConfig {
   return {
     reservoir: {
@@ -66,6 +140,7 @@ export function createDefaultMonitorConfig(): MonitorConfig {
       rollingBufferWindowMs: 4n * 60n * 60n * 1000n,
       fullOutageMaxWindowMs: 6n * 60n * 60n * 1000n,
       pruneIntervalMs: 60_000n,
+      pruneBatchSize: 1_000,
     },
     transport: {
       heartbeatGraceMs: 15_000n,
@@ -110,6 +185,6 @@ export function createDefaultMonitorConfig(): MonitorConfig {
       pauseLiveFlowDuringReplay: true,
       retryBackoffMs: 5_000n,
     },
-    now: () => BigInt(Date.now()),
+    now: createDefaultMonitorNow(),
   };
 }

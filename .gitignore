@@ -35,6 +35,11 @@ coverage/
 artifacts/
 artefacts/
 logs/
+.causal-order-monitor/
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 *.pid
 *.pid.lock
 *.seed

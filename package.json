@@ -71,7 +71,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "publishConfig": {
     "access": "public"
@@ -111,12 +111,17 @@
     "publish:prepare": "node scripts/prepare-publish.mjs",
     "publish:prepare:check": "node scripts/prepare-publish.mjs --check",
     "release:check": "npm run ci && npm run publish:dry-run",
+    "test:config-env-resolution": "npm run build && node scripts/config-env-resolution.mjs",
+    "test:http-thresholds-8nodes": "npm run build && node scripts/http-thresholds-8nodes.mjs",
     "test:inspect-snapshot": "npm run build && node scripts/inspect-snapshot.mjs",
+    "test:monitor-operational-smoke": "npm run build && node scripts/run-monitor-operational-suite.mjs --suite smoke",
+    "test:monotonic-now": "npm run build && node scripts/monotonic-now.mjs",
     "test:no-healthy-replay": "npm run build && node scripts/no-healthy-replay.mjs",
+    "test:monitor-operational-full": "npm run build && node scripts/run-monitor-operational-suite.mjs --suite full",
+    "test:prune-batching": "npm run build && node scripts/prune-batching.mjs",
+    "test:retention-admission-contract": "npm run build && node scripts/retention-admission-contract.mjs",
+    "test:runtime-bootstrap": "npm run build && node scripts/runtime-bootstrap.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.4.1"
   },
   "peerDependencies": {
     "@causal-order/dedupe": "^1.1.1",
@@ -125,7 +130,6 @@
   },
   "devDependencies": {
     "@causal-order/testing": "^0.2.6",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.2",
     "typescript": "^6.0.3"
   }

@@ -1,5 +1,11 @@
 import { MonitorRuntime } from "../runtime/MonitorRuntime.js";
 import type { MonitorConfig } from "../types/config.js";
+import {
+  loadMonitorConfigFile,
+  resolveMonitorConfigFromEnvironment,
+  type MonitorConfigEnvironmentOptions,
+  type MonitorConfigOverride,
+} from "../config.js";
 import type {
   MonitorComponent,
   MonitorDeliveryMode,
@@ -272,4 +278,22 @@ export class TransportMonitorAdapter {
         Number(count ?? 0) > 0,
     );
   }
+}
+
+export function createTransportMonitorAdapterFromFile(
+  handlers: MonitorAdapterHandlers,
+  configPath?: string,
+): TransportMonitorAdapter {
+  return new TransportMonitorAdapter(handlers, loadMonitorConfigFile(configPath));
+}
+
+export function createTransportMonitorAdapterFromEnvironment(
+  handlers: MonitorAdapterHandlers,
+  inlineConfig: MonitorConfigOverride = {},
+  options: MonitorConfigEnvironmentOptions = {},
+): TransportMonitorAdapter {
+  return new TransportMonitorAdapter(
+    handlers,
+    resolveMonitorConfigFromEnvironment(inlineConfig, options),
+  );
 }
