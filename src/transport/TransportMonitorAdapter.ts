@@ -206,13 +206,42 @@ export class TransportMonitorAdapter {
 
   async reconcileRecovery(limit?: number): Promise<ReplayPumpResult | null> {
     const snapshot = this.#runtime.getReplaySnapshot();
-    const backlog = this.#runtime.getReservoirStats().totalPendingRows;
+    const reservoir = this.#runtime.getReservoirStats();
+    const backlog = reservoir.totalPendingRows;
+    const needsRecoveryReplay = this.#runtime.needsRecoveryReplay();
+    const hasObservedRecoveryTransition =
+      this.#runtime.hasObservedRecoveryTransition();
+    const hasReplayEligibleBacklog = this.#hasReplayEligibleBacklog(
+      reservoir.pendingRowsByDeliveryMode,
+    );
 
     if (backlog === 0) {
       return null;
     }
 
-    if (snapshot.state === "idle" || snapshot.state === "failed") {
+    if (
+      snapshot.state === "idle" &&
+      (
+        !needsRecoveryReplay ||
+        !hasObservedRecoveryTransition ||
+        !hasReplayEligibleBacklog
+      )
+    ) {
+      return null;
+    }
+
+    if (
+      snapshot.state === "completed" &&
+      !hasReplayEligibleBacklog
+    ) {
+      return null;
+    }
+
+    if (
+      snapshot.state === "idle" ||
+      snapshot.state === "failed" ||
+      snapshot.state === "completed"
+    ) {
       this.#runtime.queueReplay();
       await this.#notifyReplayChange();
     }
@@ -231,5 +260,16 @@ export class TransportMonitorAdapter {
 
   async #notifyReplayChange(): Promise<void> {
     await this.#handlers.onReplayStateChange?.(this.#runtime.getReplaySnapshot());
+  }
+
+  #hasReplayEligibleBacklog(
+    pendingRowsByDeliveryMode: MonitorSnapshot["reservoir"]["pendingRowsByDeliveryMode"],
+  ): boolean {
+    return Object.entries(pendingRowsByDeliveryMode).some(
+      ([deliveryMode, count]) =>
+        deliveryMode !== "normal" &&
+        deliveryMode !== "dedupe_bypass" &&
+        Number(count ?? 0) > 0,
+    );
   }
 }

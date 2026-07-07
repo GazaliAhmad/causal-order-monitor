@@ -31,6 +31,8 @@ export class MonitorRuntime {
   readonly #router: DeliveryRouter;
   readonly #replay: ReplayCoordinator;
   #throttleTier: MonitorThrottleTier;
+  #recoveryReplayNeeded: boolean;
+  #observedRecoveryTransition: boolean;
 
   constructor(config: Partial<MonitorConfig> = {}) {
     const defaults = createDefaultMonitorConfig();
@@ -98,6 +100,8 @@ export class MonitorRuntime {
       this.#now,
     );
     this.#throttleTier = this.#config.throttle.defaultTier;
+    this.#recoveryReplayNeeded = false;
+    this.#observedRecoveryTransition = false;
   }
 
   getConfig(): Readonly<MonitorConfig> {
@@ -152,8 +156,16 @@ export class MonitorRuntime {
     component: MonitorComponent,
     update: MonitorHealthUpdate,
   ) {
+    const previous = this.#healthTracker.getComponentSnapshot(component);
     const snapshot = this.#healthTracker.updateComponentHealth(component, update);
     this.#reservoir.recordHealthTransition(snapshot);
+
+    if (
+      component !== "transport" &&
+      previous.state !== snapshot.state
+    ) {
+      this.#observedRecoveryTransition = true;
+    }
 
     if (component === "dedupe" && snapshot.state === "offline") {
       this.#throttleTier = "slow";
@@ -161,6 +173,13 @@ export class MonitorRuntime {
 
     if (component === "causal-order" && snapshot.state === "offline") {
       this.#throttleTier = "paused";
+    }
+
+    if (
+      component !== "transport" &&
+      snapshot.state === "offline"
+    ) {
+      this.#recoveryReplayNeeded = true;
     }
 
     if (
@@ -221,7 +240,7 @@ export class MonitorRuntime {
       );
     }
 
-    this.#replay.queueIfNeeded();
+    this.queueReplay();
     return this.#replay.start();
   }
 
@@ -232,7 +251,7 @@ export class MonitorRuntime {
       );
     }
 
-    this.#replay.queueIfNeeded();
+    this.queueReplay();
     return this.#replay.claimNextBatch(limit);
   }
 
@@ -298,6 +317,14 @@ export class MonitorRuntime {
     return after;
   }
 
+  needsRecoveryReplay(): boolean {
+    return this.#recoveryReplayNeeded;
+  }
+
+  hasObservedRecoveryTransition(): boolean {
+    return this.#observedRecoveryTransition;
+  }
+
   close(): void {
     this.#reservoir.close();
   }
@@ -348,13 +375,31 @@ export class MonitorRuntime {
   }
 
   #reconcileReplayQueue(): void {
-    const backlog = this.getReservoirStats().totalPendingRows;
-    if (backlog === 0) {
+    const reservoir = this.getReservoirStats();
+    if (reservoir.totalPendingRows === 0) {
+      this.#resetRecoveryReplayIfDrained();
       return;
     }
 
-    if (this.#areReplayTargetsHealthy()) {
-      this.#replay.queueIfNeeded();
+    this.#resetRecoveryReplayIfDrained();
+  }
+
+  #hasReplayEligibleBacklog(reservoir: ReservoirStats): boolean {
+    return Object.entries(reservoir.pendingRowsByDeliveryMode).some(
+      ([deliveryMode, count]) =>
+        deliveryMode !== "normal" &&
+        deliveryMode !== "dedupe_bypass" &&
+        Number(count ?? 0) > 0,
+    );
+  }
+
+  #resetRecoveryReplayIfDrained(): void {
+    if (
+      this.#areReplayTargetsHealthy() &&
+      this.#replay.getSnapshot().state === "idle" &&
+      this.getReservoirStats().totalPendingRows === 0
+    ) {
+      this.#recoveryReplayNeeded = false;
     }
   }
 }

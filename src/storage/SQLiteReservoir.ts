@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 
 import type { MonitorReservoirConfig } from "../types/config.js";
@@ -108,6 +110,9 @@ export class SQLiteReservoir {
   constructor(config: MonitorReservoirConfig, now: () => bigint) {
     this.#config = config;
     this.#now = now;
+    if (config.databasePath !== ":memory:") {
+      mkdirSync(dirname(resolve(config.databasePath)), { recursive: true });
+    }
     this.#db = new Database(config.databasePath);
     applyMonitorSchema(this.#db);
   }

@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -101,7 +101,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:inspect-snapshot && npm run test:replay-safety && npm run pack:check",
+    "ci": "npm run check && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-safety && npm run pack:check",
+    "harness:monitor": "npm run build && node scripts/run-monitor-harness.mjs",
+    "harness:order-outage": "npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 20m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-local",
     "prepack": "npm run publish:prepare && npm run build",
     "prepublishOnly": "npm run ci",
     "pack:check": "npm pack --dry-run --cache ./.local/npm-cache",
@@ -110,6 +112,7 @@
     "publish:prepare:check": "node scripts/prepare-publish.mjs --check",
     "release:check": "npm run ci && npm run publish:dry-run",
     "test:inspect-snapshot": "npm run build && node scripts/inspect-snapshot.mjs",
+    "test:no-healthy-replay": "npm run build && node scripts/no-healthy-replay.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
   },
   "dependencies": {
@@ -121,6 +124,7 @@
     "causal-order": "^1.0.0"
   },
   "devDependencies": {
+    "@causal-order/testing": "^0.2.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.2",
     "typescript": "^6.0.3"
