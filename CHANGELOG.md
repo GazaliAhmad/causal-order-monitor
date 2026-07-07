@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.0
+
+- switched the default SQLite reservoir from in-memory storage to an on-disk package path at `./.causal-order-monitor/monitor.sqlite`
+- made the SQLite reservoir create its parent directory automatically so the package default works cleanly on first boot
+- documented the new on-disk default and current configuration guidance in the README
+- added a local harness wrapper script so `@causal-order/testing@0.2.6` can target this repo's built monitor module directly instead of an older npm-installed monitor package
+- added a focused `no-healthy-replay` regression script to prove healthy flow does not incorrectly enter replay
+- fixed replay gate behavior so recovery does not reopen early while required recovery heartbeats are still missing or buffered backlog still remains
+- fixed recovery reconciliation so replay can be re-queued from a previously completed state when replay-eligible backlog is still present
+- validated the repaired monitor flow with local harness runs showing the expected `normal`, `order_buffer_only`, and `replay_through_dedupe` phases and a drained reservoir at completion
+- verified the on-disk SQLite default with harness runs that now leave behind a bounded reservoir file for inspection and sizing
+
 ## v0.0.9
 
 - added `publish:prepare` metadata syncing so the exported package version and README release markers stay aligned with `package.json`

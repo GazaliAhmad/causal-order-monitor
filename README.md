@@ -2,7 +2,7 @@
 
 Health-aware buffering, replay, and operator monitoring for the `causal-order` stack.
 
-Status: `v0.0.9` published to npm.
+Status: `v0.1.0` published to npm.
 
 `@causal-order/monitor` sits between transport ingestion and downstream delivery so your pipeline can keep accepting events, preserve backlog, and recover in a controlled way when `@causal-order/dedupe` or `causal-order` becomes unavailable.
 
@@ -24,7 +24,14 @@ npm install @causal-order/monitor better-sqlite3 causal-order @causal-order/dedu
 
 ## Stability
 
-This `v0.0.9` release is the published npm package for the current monitor runtime, replay, routing, and operator-inspection surface.
+The published npm package is currently `v0.1.0`.
+
+This release includes:
+
+- real harness validation through `@causal-order/testing@0.2.6`
+- replay gate and recovery correctness under `causal-order` outage conditions
+- on-disk SQLite reservoir defaults for realistic wall-clock retention behavior
+- artifact review of backlog accumulation, replay drain, and final reservoir state
 
 ## When To Use It
 
@@ -94,7 +101,7 @@ const monitor = new TransportMonitorAdapter(
   },
   {
     reservoir: {
-      databasePath: "./monitor.sqlite",
+      databasePath: "./.causal-order-monitor/monitor.sqlite",
     },
   },
 );
@@ -128,7 +135,7 @@ import { createMonitorRuntime } from "@causal-order/monitor";
 
 const runtime = createMonitorRuntime({
   reservoir: {
-    databasePath: "./monitor.sqlite",
+    databasePath: "./.causal-order-monitor/monitor.sqlite",
   },
 });
 
@@ -176,7 +183,7 @@ Recovery is intentionally conservative:
 
 `createDefaultMonitorConfig()` returns the full configuration shape. Common settings:
 
-- `reservoir.databasePath`: SQLite path, `":memory:"` by default
+- `reservoir.databasePath`: SQLite path, default `./.causal-order-monitor/monitor.sqlite`
 - `reservoir.rollingBufferWindowMs`: normal rolling retention window
 - `reservoir.fullOutageMaxWindowMs`: hard retention ceiling during deeper outages
 - `transport.heartbeatGraceMs`: heartbeat grace period before transport is considered stale
@@ -185,6 +192,8 @@ Recovery is intentionally conservative:
 - `replay.healthConfirmationHeartbeats`: heartbeats required before replay resumes
 - `replay.pauseLiveFlowDuringReplay`: whether live flow stays gated during drain
 - `replay.retryBackoffMs`: delay before retrying a failed replay attempt
+
+If you do not override `reservoir.databasePath`, the package now creates `./.causal-order-monitor/monitor.sqlite` automatically on the host where the monitor runs.
 
 ## Inspection And Operator State
 
@@ -219,15 +228,17 @@ Key exported types include:
 - `ReservoirStats`
 - `InspectedMonitorSnapshot`
 
-## Version `v0.0.9`
+## Version `v0.1.0`
 
-The current package line includes:
+This release includes:
 
-- operational runtime, routing, health tracking, SQLite buffering, and replay coordination
-- retry-aware replay backoff with persisted retry horizon and failure streak visibility
-- retry-safe pruning so waiting rows survive the rolling buffer until the hard cutoff
-- derived inspection output for replay posture, backlog, gating, and operator attention
-- direct inspected snapshot access from both `MonitorRuntime` and `TransportMonitorAdapter`
+- defaulting the reservoir to an on-disk SQLite file instead of `:memory:`
+- auto-creating the SQLite parent directory for first-run deployment safety
+- a local harness wrapper so `@causal-order/testing@0.2.6` can validate this repo's built monitor directly
+- a focused healthy-flow regression proving replay does not start incorrectly
+- replay gate fixes so live flow does not reopen before required recovery heartbeats and backlog drain are both satisfied
+- recovery reconciliation fixes so replay can be re-queued if replay-eligible backlog is still present after an apparent completion
+- fast harness validation showing the expected `normal`, `order_buffer_only`, and `replay_through_dedupe` phases with a drained reservoir at completion
 
 ## Node Support
 
@@ -240,7 +251,9 @@ This package is validated in-repo with:
 
 - `npm run check`
 - `npm run test:inspect-snapshot`
+- `npm run test:no-healthy-replay`
 - `npm run test:replay-safety`
+- `npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 10m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-10m-fast`
 
 ## License
 

@@ -57,8 +57,11 @@ export class ReplayCoordinator {
       this.#snapshot.state === "running" ||
       this.#snapshot.state === "failed" ||
       (this.#snapshot.state === "completed" &&
-        this.#snapshot.recoveryHeartbeatCount <
-          this.#snapshot.requiredRecoveryHeartbeats)
+        (
+          this.#snapshot.recoveryHeartbeatCount <
+            this.#snapshot.requiredRecoveryHeartbeats ||
+          this.#reservoir.getStats().totalPendingRows > 0
+        ))
     );
   }
 

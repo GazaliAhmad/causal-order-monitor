@@ -1,10 +1,8 @@
 # Roadmap
 
-This roadmap is specifically for `@causal-order/monitor`.
+This file records the shipped `v0.1.0` state of `@causal-order/monitor`.
 
-It focuses on safe degraded operation first.
-
-The goal is to make `@causal-order/monitor` a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`, not just a dashboard or metrics wrapper.
+`@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
 ## Principles
 
@@ -16,56 +14,16 @@ The goal is to make `@causal-order/monitor` a deployable recovery envelope aroun
 - Make operator evidence part of the product, not a later cleanup task.
 - Align `/monitor` validation with `@causal-order/testing` instead of inventing a separate testing world.
 
-## Current Status
+## Current Release
 
-- Status: `v0.0.9` implementation baseline. `v0.1.0` is reserved for real wall-clock validation.
-- Version `v0.0.9` is the active implementation baseline for this repo.
-- The package foundation exists:
-  - `package.json`
-  - TypeScript build config
-  - README, changelog, and license
-- The design direction is now written down locally:
-  - transport-aware topology after `@causal-order/transport`
-  - rolling SQLite-backed buffer
-  - health-aware routing around `@causal-order/transport`, `/dedupe`, and `causal-order`
-  - throttled fallback when `/dedupe` is offline
-  - replay-through-dedupe recovery
-  - `/testing` harness integration as part of the package story
-- The runtime now exists as an active `v0.0.9` implementation line:
-  - runtime contracts exported
-  - SQLite reservoir implemented
-  - health tracking implemented
-  - routing and throttle control implemented
-  - replay coordination implemented
-  - replay retry backoff and failure evidence implemented
-  - replay retry inspection surface implemented
-  - derived operator-facing inspection state implemented for replay gating, retry delay, and backlog posture
-  - runtime and transport adapter now expose the inspected operator summary directly
-  - transport-facing adapter seam added
-  - testing scenario catalog added for handoff into `@causal-order/testing`
-  - `monitor-order-outage` has now been validated through healthy flow, `order_buffer_only`, replay-through-recovery, and empty-reservoir completion
-  - repo-local replay safety validation now proves retry-waiting rows are preserved through rolling prune and only dead-letter at the hard cutoff
-  - repo-local inspection validation now proves the derived inspection summary matches buffering and replay-retry states
-
-## Version `v0.0.9` Decisions
-
-These are fixed for the first implementation line:
-
-- the healthy buffer is always active and rolling for `4h`
-- the dual-outage retention ceiling is a hard `6h` maximum
-- replay should always return through restored `/dedupe`
-- replay failure should back off briefly before retry and keep live flow gated while backlog recovery is still unsettled
-- retry-waiting backlog should be visible directly in runtime stats and snapshot inspection
-- inspection should describe operator posture directly, not just expose raw retry fields
-- downstream consumers should be able to obtain the inspected operator summary directly from runtime surfaces
-- no further monitor features should be added before real wall-clock validation
-
-These decisions are intentionally conservative.
-They reduce branchy recovery semantics and make the first release easier to reason about under pressure.
+- Status: `v0.1.0` is the current package release.
+- Package metadata, README, changelog, and npm publishing workflow are aligned to `v0.1.0`.
+- The package exports a real runtime surface instead of a placeholder package shell.
+- The monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, and operator-facing inspection output.
 
 ## Package Intent
 
-`@causal-order/monitor` is meant to sit inside the existing stack:
+`@causal-order/monitor` sits in the stack as:
 
 ```text
 node ingress
@@ -91,201 +49,49 @@ It is not meant to be:
 - a replacement for `causal-order`
 - a replacement for `@causal-order/dedupe`
 
-## `v0.0.9` Release Goal
+## Shipped Scope
 
-The first release goal is narrow:
+The `v0.1.0` release includes:
 
-make `/monitor` real enough that we can prove the following end to end:
+- exported runtime contracts through `createMonitorRuntime()`, `MonitorRuntime`, and the package subpath entrypoints
+- a SQLite-backed reservoir with rolling `4h` retention and a hard `6h` dual-outage ceiling
+- health tracking for `transport`, `dedupe`, and `causal-order`
+- routing across `normal`, `dedupe_bypass_throttled`, `order_buffer_only`, `full_outage_buffer`, and `replay_through_dedupe`
+- replay coordination with backlog drain gating, retry backoff, and recovery confirmation heartbeats
+- operator-facing inspection output for operational posture, replay readiness, backlog progress, retry delay, and live-flow gating
+- direct inspected snapshot access from both `MonitorRuntime` and `TransportMonitorAdapter`
+- transport-facing adapter integration through `TransportMonitorAdapter`
+- monitor-aware harness integration and artifacts for `@causal-order/testing`
+- an on-disk default reservoir path at `./.causal-order-monitor/monitor.sqlite`
+- automatic creation of the SQLite parent directory on first boot
 
-- healthy rolling buffering works
-- transport outage and reconnect bursts are visible and controllable in the operator story
-- `/dedupe` failure triggers controlled direct-to-order fallback
-- `causal-order` failure triggers backlog accumulation and later recovery
-- dual outage remains bounded by the hard `6h` reservoir ceiling
-- replay returns through restored `/dedupe`
-- `/testing` can validate and report those behaviors
+## Fixed Release Decisions
 
-## `v0.0.9` Workstreams
+These behaviors are fixed in the `v0.1.0` release:
 
-## 1. Runtime Contracts
+- the healthy buffer is always active and rolling for `4h`
+- the dual-outage retention ceiling is a hard `6h` maximum
+- replay always returns through restored `/dedupe`
+- replay failure backs off before retry and keeps live flow gated while backlog recovery is unsettled
+- retry-waiting backlog is visible directly in runtime stats and snapshot inspection
+- inspection describes operator posture directly instead of only exposing raw replay fields
+- downstream consumers can obtain the inspected operator summary directly from runtime surfaces
 
-Build a real public surface for the package instead of a placeholder index.
+## Validation Evidence
 
-Required scope:
+The `v0.1.0` release is backed by:
 
-- `MonitorConfig`
-- `MonitorSnapshot`
-- `MonitorHealthState`
-- replay session snapshot types
-- reservoir stats types
-- `createMonitorRuntime()`
+- repo-local type validation through `npm run check`
+- inspection regression coverage through `npm run test:inspect-snapshot`
+- healthy-flow replay guard coverage through `npm run test:no-healthy-replay`
+- replay failure and retry safety coverage through `npm run test:replay-safety`
+- monitor harness validation through `@causal-order/testing@0.2.6`
+- reviewed harness artifacts showing healthy flow, `order_buffer_only`, replay-through-recovery, and drained completion
+- verified on-disk SQLite default behavior with bounded retained state available for inspection
 
-Exit criteria:
+## Acceptance Summary
 
-- the package exports an honest runtime API
-- the exported names are narrow and intentional
-- the README can describe the real package shape without pretending the deeper implementation is done
-
-## 2. SQLite Reservoir
-
-Build the bounded operational storage layer.
-
-Required scope:
-
-- schema bootstrap
-- append-first ingress writes
-- rolling `4h` retention
-- hard `6h` dual-outage maximum
-- replay-aware pruning
-- lightweight backlog statistics
-
-Required tables:
-
-- `ingress_events`
-- `component_health_log`
-- `outage_windows`
-- `replay_sessions`
-
-Exit criteria:
-
-- ingress can be stored and pruned by window safely
-- replay-pinned data is not evicted too early
-- backlog size and age can be inspected cheaply
-
-## 3. Health Tracking
-
-Build the state model for `@causal-order/transport`, `/dedupe`, and `causal-order`.
-
-Required scope:
-
-- separate health state for transport
-- separate health state for each component
-- state transitions:
-  - `online`
-  - `degraded`
-  - `offline`
-- combined routing posture
-- health transition logging
-- outage-window opening and closing
-
-Exit criteria:
-
-- component transitions are explicit and inspectable
-- routing posture changes deterministically with health changes
-- operator evidence includes when and why routing changed
-- transport blackout periods and reconnect bursts are visible in artifacts
-
-## 4. Routing And Throttle Control
-
-Build the failover behavior that matters most during live degradation.
-
-Required routing modes:
-
-- `normal`
-- `dedupe_bypass_throttled`
-- `order_buffer_only`
-- `full_outage_buffer`
-- `replay_through_dedupe`
-
-Required throttle tiers:
-
-- `open`
-- `slow`
-- `very_slow`
-- `paused`
-
-Focus:
-
-- direct-to-order fallback must be deliberately slower than the normal path
-- the control model should be simple, bounded, and inspectable
-
-Exit criteria:
-
-- dedupe-bypass mode activates a real throttling policy
-- backlog and downstream pressure influence routing safely
-- live traffic can be paused or slowed during recovery transitions
-
-## 5. Replay Coordination
-
-Build the recovery gate that prevents loose mixing of live traffic and backlog replay.
-
-Required scope:
-
-- replay session lifecycle
-- replay start and completion recording
-- replay-through-dedupe enforcement
-- post-drain health confirmation before reopening live flow
-
-First completion rule:
-
-- replay backlog reaches `0`
-- replay session completes without delivery failure
-- downstream health remains stable for a short confirmation window
-
-Exit criteria:
-
-- one replay session can be followed end to end in runtime state and artifacts
-- live flow does not reopen before recovery is actually complete
-- failed replay leaves evidence instead of disappearing into logs
-
-## 6. Operator Inspection
-
-Even without a UI, `v0.0.9` should give maintainers and operators enough evidence to understand behavior.
-
-Required scope:
-
-- runtime snapshot helpers
-- health snapshot
-- backlog stats
-- replay snapshot
-- throttle and routing state
-
-Exit criteria:
-
-- a maintainer can answer:
-  - which component failed?
-  - when did failover begin?
-  - how much backlog accumulated?
-  - which route is active now?
-  - did replay finish?
-
-## 7. `/testing` Harness Integration
-
-`@causal-order/monitor` should be validated through the same deployment-style harness story already used by the ecosystem.
-
-That means:
-
-- extend the provider boundary in `@causal-order/testing`
-- add a monitor adapter seam
-- add monitor-aware artifacts
-- add monitor-aware scenarios and reporting
-- validate the monitor story in both transportless deployment-runtime flows and transport-aware adapter-runtime flows
-
-Required first artifact additions:
-
-- `monitor-heartbeats.ndjson`
-- `monitor-health.ndjson`
-- `monitor-replay.ndjson`
-- `monitor-summary.json`
-
-Required first scenarios:
-
-1. healthy rolling reservoir
-2. transport outage and reconnect burst visibility
-3. `/dedupe` outage with throttle verification
-4. `causal-order` outage with buffered recovery
-5. dual outage with hard `6h` cap verification
-6. recovery-through-dedupe verification
-
-Exit criteria:
-
-- `/testing` can produce monitor-aware artifacts
-- monitor failure modes can be exercised without bespoke one-off scripts
-- report output can explain recovery behavior in the same ecosystem language as the other packages
-
-## `v0.0.9` Acceptance Criteria
-
-Version `v0.0.9` is done when:
+`v0.1.0` is the release where:
 
 1. the package exports a real runtime API
 2. SQLite buffering works with rolling `4h` behavior
@@ -293,47 +99,18 @@ Version `v0.0.9` is done when:
 4. transport health transitions and blackout periods are recorded clearly
 5. `/dedupe` outage triggers throttled direct-to-order behavior
 6. `causal-order` outage triggers backlog accumulation and later replay
-7. replay always routes through restored `/dedupe`
-8. live flow does not reopen until replay has completed and health has stabilized briefly
-9. `/testing` can validate the major healthy and degraded paths
-10. monitor-aware run artifacts and summaries exist
-11. replay failure does not immediately churn into uncontrolled retry loops
-12. replay retry timing and consecutive failure evidence are visible in runtime state
-13. retry-waiting backlog is visible directly from reservoir stats and snapshot inspection helpers
-14. a repo-local failure-path test proves retry-waiting rows survive rolling prune and do not replay before the retry horizon
-15. snapshot inspection derives operator-facing live-flow gate, retry-delay, and replay posture summaries without requiring consumers to rebuild that logic themselves
-16. runtime-facing consumers can retrieve the same inspected operator summary directly from `MonitorRuntime` or `TransportMonitorAdapter`
+7. replay routes through restored `/dedupe`
+8. live flow stays closed until replay and recovery confirmation are complete
+9. `/testing` validates the major healthy and degraded paths
+10. monitor-aware artifacts and summaries exist for incident review
+11. replay failure does not churn into uncontrolled retry loops
+12. retry timing and failure evidence are visible in runtime state
+13. retry-waiting backlog is visible through reservoir stats and inspection helpers
+14. runtime-facing consumers can retrieve the same inspected operator summary directly from `MonitorRuntime` or `TransportMonitorAdapter`
 
-## `v0.1.0` Validation Goal
+## Outcome
 
-The next milestone after `v0.0.9` should be `v0.1.0`, and it should focus on real wall-clock validation rather than feature expansion.
-
-Required validation themes:
-
-- real wall-clock rolling-window retention behavior
-- real wall-clock hard-cutoff behavior
-- real wall-clock replay retry/backoff timing
-- real outage/recovery runs through `@causal-order/testing`
-- artifact review of backlog growth, retry waiting, replay drain, and prune decisions
-
-Until `v0.1.0` is completed, it should not jump to:
-
-- dashboard-first scope
-- multi-backend storage support
-- permanent archival persistence
-- distributed monitor federation
-- additional monitor convenience/API features
-
-## Longer Term
-
-Longer term, `/monitor` should aim to become:
-
-- a deployable ecosystem operator layer
-- a trustworthy short-horizon recovery buffer
-- a clear source of incident and replay evidence
-- a package whose testing story is inseparable from its runtime story
-
-The package is successful if teams can say:
+The package is successful when teams can say:
 
 ```text
 we know what failed,

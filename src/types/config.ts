@@ -1,4 +1,11 @@
+import { resolve } from "node:path";
+
 import type { MonitorThrottleTier } from "./events.js";
+
+const DEFAULT_MONITOR_DB_PATH = resolve(
+  ".causal-order-monitor",
+  "monitor.sqlite",
+);
 
 export interface MonitorReservoirConfig {
   databasePath: string;
@@ -55,7 +62,7 @@ export interface MonitorConfig {
 export function createDefaultMonitorConfig(): MonitorConfig {
   return {
     reservoir: {
-      databasePath: ":memory:",
+      databasePath: DEFAULT_MONITOR_DB_PATH,
       rollingBufferWindowMs: 4n * 60n * 60n * 1000n,
       fullOutageMaxWindowMs: 6n * 60n * 60n * 1000n,
       pruneIntervalMs: 60_000n,
