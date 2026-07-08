@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -49,6 +49,10 @@
     "./storage": {
       "types": "./.build/src/storage.d.ts",
       "import": "./.build/src/storage.js"
+    },
+    "./testing": {
+      "types": "./.build/src/testing.d.ts",
+      "import": "./.build/src/testing.js"
     },
     "./throttle": {
       "types": "./.build/src/throttle.d.ts",
@@ -101,7 +105,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-safety && npm run pack:check",
+    "ci": "npm run check && npm run test:export-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run pack:check",
     "harness:monitor": "npm run build && node scripts/run-monitor-harness.mjs",
     "harness:order-outage": "npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 20m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-local",
     "prepack": "npm run publish:prepare && npm run build",
@@ -112,6 +116,7 @@
     "publish:prepare:check": "node scripts/prepare-publish.mjs --check",
     "release:check": "npm run ci && npm run publish:dry-run",
     "test:config-env-resolution": "npm run build && node scripts/config-env-resolution.mjs",
+    "test:export-contract": "npm run build && node scripts/export-contract.mjs",
     "test:http-thresholds-8nodes": "npm run build && node scripts/http-thresholds-8nodes.mjs",
     "test:inspect-snapshot": "npm run build && node scripts/inspect-snapshot.mjs",
     "test:monitor-operational-smoke": "npm run build && node scripts/run-monitor-operational-suite.mjs --suite smoke",
@@ -119,6 +124,7 @@
     "test:no-healthy-replay": "npm run build && node scripts/no-healthy-replay.mjs",
     "test:monitor-operational-full": "npm run build && node scripts/run-monitor-operational-suite.mjs --suite full",
     "test:prune-batching": "npm run build && node scripts/prune-batching.mjs",
+    "test:replay-ownership-guard": "npm run build && node scripts/replay-ownership-guard.mjs",
     "test:retention-admission-contract": "npm run build && node scripts/retention-admission-contract.mjs",
     "test:runtime-bootstrap": "npm run build && node scripts/runtime-bootstrap.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"

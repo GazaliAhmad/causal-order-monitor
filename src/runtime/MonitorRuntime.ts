@@ -23,6 +23,30 @@ import type {
   ReservoirStats,
 } from "../types/snapshots.js";
 
+type ReplayOrchestrationOwner = "manual" | "adapter";
+
+export class ReplayOwnershipError extends Error {
+  readonly code = "ERR_MONITOR_REPLAY_OWNERSHIP";
+  readonly attemptedAction: string;
+  readonly actualOwner: ReplayOrchestrationOwner;
+  readonly requestedOwner: ReplayOrchestrationOwner;
+
+  constructor(
+    attemptedAction: string,
+    actualOwner: ReplayOrchestrationOwner,
+    requestedOwner: ReplayOrchestrationOwner,
+    guidance: string,
+  ) {
+    super(
+      `Cannot ${attemptedAction} because this runtime is already bound to '${actualOwner}' replay orchestration. ${guidance}`,
+    );
+    this.name = "ReplayOwnershipError";
+    this.attemptedAction = attemptedAction;
+    this.actualOwner = actualOwner;
+    this.requestedOwner = requestedOwner;
+  }
+}
+
 export class MonitorRuntime {
   readonly #config: MonitorConfig;
   readonly #now: () => bigint;
@@ -33,6 +57,7 @@ export class MonitorRuntime {
   #throttleTier: MonitorThrottleTier;
   #recoveryReplayNeeded: boolean;
   #observedRecoveryTransition: boolean;
+  #replayOwner: ReplayOrchestrationOwner | null;
 
   constructor(config: Partial<MonitorConfig> = {}) {
     const defaults = createDefaultMonitorConfig();
@@ -102,6 +127,7 @@ export class MonitorRuntime {
     this.#throttleTier = this.#config.throttle.defaultTier;
     this.#recoveryReplayNeeded = false;
     this.#observedRecoveryTransition = false;
+    this.#replayOwner = null;
   }
 
   getConfig(): Readonly<MonitorConfig> {
@@ -141,11 +167,21 @@ export class MonitorRuntime {
       this.getReservoirStats(),
     );
     const gatedDecision =
-      this.#config.replay.pauseLiveFlowDuringReplay && this.#replay.isGateClosed()
+      this.#config.replay.pauseLiveFlowDuringReplay &&
+      (
+        this.#replay.isGateClosed() ||
+        this.#shouldHoldLiveFlowForRecoveryConfirmation()
+      )
         ? {
             ...decision,
             action: "buffer_only" as const,
-            reason: `${decision.reason}; replay gate holding live flow`,
+            reason: `${
+              decision.reason
+            }; ${
+              this.#replay.isGateClosed()
+                ? "replay gate holding live flow"
+                : "recovery confirmation holding live flow before replay start"
+            }`,
           }
         : decision;
     this.#throttleTier = gatedDecision.throttleTier;
@@ -199,6 +235,14 @@ export class MonitorRuntime {
       this.#throttleTier = this.#config.throttle.defaultTier;
     }
 
+    if (component !== "transport") {
+      this.#replay.observeRecoveryHeartbeat(
+        component,
+        snapshot.state,
+        this.#areReplayTargetsHealthy(),
+      );
+    }
+
     this.#reconcileReplayQueue();
 
     return snapshot;
@@ -229,33 +273,103 @@ export class MonitorRuntime {
     return this.#throttleTier;
   }
 
+  bindReplayOrchestrationOwner(owner: ReplayOrchestrationOwner): ReplayOrchestrationOwner {
+    if (this.#replayOwner !== null && this.#replayOwner !== owner) {
+      throw new ReplayOwnershipError(
+        "bind replay orchestration ownership",
+        this.#replayOwner,
+        owner,
+        "Use a fresh MonitorRuntime when switching between manual replay control and adapter-managed replay control.",
+      );
+    }
+
+    this.#replayOwner = owner;
+    return this.#replayOwner;
+  }
+
   queueReplay(): ReplaySessionSnapshot {
-    return this.#replay.queueIfNeeded();
+    return this.#queueReplayForOwner("manual");
+  }
+
+  queueManagedReplay(): ReplaySessionSnapshot {
+    return this.#queueReplayForOwner("adapter");
   }
 
   startReplay(): ReplaySessionSnapshot {
-    if (!this.#areReplayTargetsHealthy()) {
-      throw new Error(
-        "Cannot start replay until both dedupe and causal-order are online.",
-      );
-    }
+    this.#assertReplayOwnership(
+      "manual",
+      "start replay manually",
+      "Use TransportMonitorAdapter replay helpers instead of direct MonitorRuntime replay commands on an adapter-managed runtime.",
+    );
 
-    this.queueReplay();
-    return this.#replay.start();
+    return this.#startReplayInternal();
+  }
+
+  claimManagedReplayBatch(limit = this.#config.throttle.verySlow.batchSize) {
+    this.#assertReplayOwnership(
+      "adapter",
+      "claim an adapter-managed replay batch",
+      "Use MonitorRuntime replay commands directly only on runtimes that are not adapter-managed.",
+    );
+
+    return this.#claimReplayBatchInternal(limit);
+  }
+
+  acknowledgeManagedReplayBatch(
+    rowIds: ReadonlyArray<number>,
+  ): ReplaySessionSnapshot {
+    this.#assertReplayOwnership(
+      "adapter",
+      "acknowledge an adapter-managed replay batch",
+      "Use MonitorRuntime replay commands directly only on runtimes that are not adapter-managed.",
+    );
+
+    return this.#replay.acknowledgeBatch(rowIds);
+  }
+
+  failManagedReplay(
+    error: string,
+    rowIds: ReadonlyArray<number> = [],
+  ) {
+    this.#assertReplayOwnership(
+      "adapter",
+      "fail an adapter-managed replay session",
+      "Use MonitorRuntime replay commands directly only on runtimes that are not adapter-managed.",
+    );
+
+    return this.#replay.fail(error, rowIds);
+  }
+
+  abortManagedReplay(
+    reason: string,
+    rowIds: ReadonlyArray<number> = [],
+  ) {
+    this.#assertReplayOwnership(
+      "adapter",
+      "abort an adapter-managed replay session",
+      "Use MonitorRuntime replay commands directly only on runtimes that are not adapter-managed.",
+    );
+
+    return this.#replay.abort(reason, rowIds);
   }
 
   claimReplayBatch(limit = this.#config.throttle.verySlow.batchSize) {
-    if (!this.#areReplayTargetsHealthy()) {
-      throw new Error(
-        "Cannot claim replay batch until both dedupe and causal-order are online.",
-      );
-    }
+    this.#assertReplayOwnership(
+      "manual",
+      "claim a manual replay batch",
+      "Use TransportMonitorAdapter replay helpers instead of direct MonitorRuntime replay commands on an adapter-managed runtime.",
+    );
 
-    this.queueReplay();
-    return this.#replay.claimNextBatch(limit);
+    return this.#claimReplayBatchInternal(limit);
   }
 
   acknowledgeReplayBatch(rowIds: ReadonlyArray<number>): ReplaySessionSnapshot {
+    this.#assertReplayOwnership(
+      "manual",
+      "acknowledge a manual replay batch",
+      "Use TransportMonitorAdapter replay helpers instead of direct MonitorRuntime replay commands on an adapter-managed runtime.",
+    );
+
     return this.#replay.acknowledgeBatch(rowIds);
   }
 
@@ -264,10 +378,22 @@ export class MonitorRuntime {
   }
 
   failReplay(error: string, rowIds: ReadonlyArray<number> = []) {
+    this.#assertReplayOwnership(
+      "manual",
+      "fail a manual replay session",
+      "Use TransportMonitorAdapter replay helpers instead of direct MonitorRuntime replay commands on an adapter-managed runtime.",
+    );
+
     return this.#replay.fail(error, rowIds);
   }
 
   abortReplay(reason: string, rowIds: ReadonlyArray<number> = []) {
+    this.#assertReplayOwnership(
+      "manual",
+      "abort a manual replay session",
+      "Use TransportMonitorAdapter replay helpers instead of direct MonitorRuntime replay commands on an adapter-managed runtime.",
+    );
+
     return this.#replay.abort(reason, rowIds);
   }
 
@@ -299,6 +425,7 @@ export class MonitorRuntime {
   }
 
   pruneReservoir(): { markedDeadLetter: number; deletedRows: number } {
+    this.#reservoir.reclaimStaleReplayRows(this.#config.replay.retryBackoffMs);
     return this.#reservoir.pruneExpired(this.#isFullOutageActive());
   }
 
@@ -325,8 +452,45 @@ export class MonitorRuntime {
     return this.#observedRecoveryTransition;
   }
 
+  isReplayRecoveryConfirmed(): boolean {
+    return this.#replay.hasRecoveryConfirmation();
+  }
+
   close(): void {
     this.#reservoir.close();
+  }
+
+  #queueReplayForOwner(owner: ReplayOrchestrationOwner): ReplaySessionSnapshot {
+    this.#assertReplayOwnership(
+      owner,
+      owner === "adapter" ? "queue adapter-managed replay" : "queue replay manually",
+      owner === "adapter"
+        ? "Use MonitorRuntime replay commands directly only on runtimes that are not adapter-managed."
+        : "Use TransportMonitorAdapter replay helpers instead of direct MonitorRuntime replay commands on an adapter-managed runtime.",
+    );
+    return this.#replay.queueIfNeeded();
+  }
+
+  #startReplayInternal(): ReplaySessionSnapshot {
+    if (!this.#areReplayTargetsHealthy()) {
+      throw new Error(
+        "Cannot start replay until both dedupe and causal-order are online.",
+      );
+    }
+
+    this.#replay.queueIfNeeded();
+    return this.#replay.start();
+  }
+
+  #claimReplayBatchInternal(limit = this.#config.throttle.verySlow.batchSize) {
+    if (!this.#areReplayTargetsHealthy()) {
+      throw new Error(
+        "Cannot claim replay batch until both dedupe and causal-order are online.",
+      );
+    }
+
+    this.#replay.queueIfNeeded();
+    return this.#replay.claimNextBatch(limit);
   }
 
   #deriveRoutingMode(): MonitorRoutingMode {
@@ -400,6 +564,38 @@ export class MonitorRuntime {
       this.getReservoirStats().totalPendingRows === 0
     ) {
       this.#recoveryReplayNeeded = false;
+    }
+  }
+
+  #shouldHoldLiveFlowForRecoveryConfirmation(): boolean {
+    const reservoir = this.getReservoirStats();
+
+    return (
+      this.#areReplayTargetsHealthy() &&
+      this.#recoveryReplayNeeded &&
+      this.#observedRecoveryTransition &&
+      this.#hasReplayEligibleBacklog(reservoir) &&
+      !this.#replay.hasRecoveryConfirmation()
+    );
+  }
+
+  #assertReplayOwnership(
+    owner: ReplayOrchestrationOwner,
+    attemptedAction: string,
+    mismatchGuidance: string,
+  ): void {
+    if (this.#replayOwner === null) {
+      this.#replayOwner = owner;
+      return;
+    }
+
+    if (this.#replayOwner !== owner) {
+      throw new ReplayOwnershipError(
+        attemptedAction,
+        this.#replayOwner,
+        owner,
+        mismatchGuidance,
+      );
     }
   }
 }

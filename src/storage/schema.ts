@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS ingress_events (
   replay_state TEXT NOT NULL,
   replay_attempts INTEGER NOT NULL DEFAULT 0,
   retry_not_before_ms INTEGER,
+  replay_claimed_at_ms INTEGER,
   expires_at_ms INTEGER NOT NULL
 );
 
@@ -29,6 +30,9 @@ CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_state
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_retry
   ON ingress_events(replay_state, retry_not_before_ms);
+
+CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_claimed
+  ON ingress_events(replay_state, replay_claimed_at_ms);
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_ingest_time
   ON ingress_events(replay_state, monitor_ingest_at_ms);
@@ -88,5 +92,9 @@ export function applyMonitorSchema(db: DatabaseSync): void {
 
   if (!columnNames.has("retry_not_before_ms")) {
     db.exec(`ALTER TABLE ingress_events ADD COLUMN retry_not_before_ms INTEGER`);
+  }
+
+  if (!columnNames.has("replay_claimed_at_ms")) {
+    db.exec(`ALTER TABLE ingress_events ADD COLUMN replay_claimed_at_ms INTEGER`);
   }
 }

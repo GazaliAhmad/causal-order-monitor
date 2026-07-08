@@ -6,9 +6,14 @@ import type {
 function deriveOperationalState(
   snapshot: MonitorSnapshot,
   replayRetryBackoffActive: boolean,
+  preReplayRecoveryConfirmationActive: boolean,
 ): InspectedMonitorSnapshot["operationalState"] {
   if (replayRetryBackoffActive) {
     return "replay_retry_waiting";
+  }
+
+  if (preReplayRecoveryConfirmationActive) {
+    return "recovery_confirming";
   }
 
   if (snapshot.replay.state === "queued" || snapshot.replay.state === "running") {
@@ -36,9 +41,14 @@ function deriveOperationalState(
 function deriveLiveFlowGateReason(
   snapshot: MonitorSnapshot,
   replayRetryBackoffActive: boolean,
+  preReplayRecoveryConfirmationActive: boolean,
 ): string | null {
   if (replayRetryBackoffActive) {
     return "replay retry backoff in progress";
+  }
+
+  if (preReplayRecoveryConfirmationActive) {
+    return "pre-replay health confirmation is still in progress";
   }
 
   if (snapshot.replay.state === "queued" || snapshot.replay.state === "running") {
@@ -61,13 +71,32 @@ export function inspectMonitorSnapshot(
   const replayRetryBackoffActive =
     snapshot.replay.nextRetryAt !== null &&
     snapshot.replay.nextRetryAt > snapshot.generatedAt;
+  const replayEligibleBacklog = Object.entries(
+    snapshot.reservoir.pendingRowsByDeliveryMode,
+  ).some(
+    ([deliveryMode, count]) =>
+      deliveryMode !== "normal" &&
+      deliveryMode !== "dedupe_bypass" &&
+      Number(count ?? 0) > 0,
+  );
+  const replayTargetsHealthy =
+    snapshot.components.dedupe.state === "online" &&
+    snapshot.components["causal-order"].state === "online";
+  const preReplayRecoveryConfirmationActive =
+    replayTargetsHealthy &&
+    replayEligibleBacklog &&
+    snapshot.replay.state === "idle" &&
+    snapshot.replay.recoveryHeartbeatCount <
+      snapshot.replay.requiredRecoveryHeartbeats;
   const operationalState = deriveOperationalState(
     snapshot,
     replayRetryBackoffActive,
+    preReplayRecoveryConfirmationActive,
   );
   const liveFlowGateReason = deriveLiveFlowGateReason(
     snapshot,
     replayRetryBackoffActive,
+    preReplayRecoveryConfirmationActive,
   );
   const liveFlowGateClosed = liveFlowGateReason !== null;
   const replayReadyRows = Math.max(

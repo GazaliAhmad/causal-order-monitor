@@ -177,6 +177,7 @@ export class SQLiteReservoir {
           replay_state,
           replay_attempts,
           retry_not_before_ms,
+          replay_claimed_at_ms,
           expires_at_ms
         ) VALUES (
           @id,
@@ -194,6 +195,7 @@ export class SQLiteReservoir {
           @replay_state,
           @replay_attempts,
           @retry_not_before_ms,
+          @replay_claimed_at_ms,
           @expires_at_ms
         )`,
     ).run({
@@ -215,6 +217,7 @@ export class SQLiteReservoir {
         options.retryNotBeforeMs === null || options.retryNotBeforeMs === undefined
           ? null
           : toSqlBigInt(options.retryNotBeforeMs),
+      replay_claimed_at_ms: null,
       expires_at_ms: toSqlBigInt(expiresAt),
     });
 
@@ -358,9 +361,10 @@ export class SQLiteReservoir {
              SET replay_state = 'replaying',
                  replay_attempts = replay_attempts + 1,
                  retry_not_before_ms = NULL,
+                 replay_claimed_at_ms = ?,
                  delivery_mode = ?
              WHERE rowid IN (${placeholders})`,
-      ).run(deliveryMode, ...ids);
+      ).run(toSqlBigInt(this.#now()), deliveryMode, ...ids);
 
       return rows.map((row) => ({
         rowId: Number(row.row_id),
@@ -390,6 +394,28 @@ export class SQLiteReservoir {
 
   deadLetterReplayBatch(rowIds: ReadonlyArray<number>): number {
     return this.#updateReplayRows(rowIds, "dead_letter", null);
+  }
+
+  reclaimStaleReplayRows(maxClaimAgeMs: bigint): number {
+    if (maxClaimAgeMs < 0n) {
+      return 0;
+    }
+
+    const staleClaimCutoff = this.#now() - maxClaimAgeMs;
+    let totalReclaimed = 0;
+
+    while (true) {
+      const reclaimedThisPass = this.#withTransaction(() => {
+        const rowIds = this.#selectStaleReplayingRowIds(staleClaimCutoff);
+        return this.#updateReplayRows(rowIds, "pending", null);
+      });
+
+      if (reclaimedThisPass === 0) {
+        return totalReclaimed;
+      }
+
+      totalReclaimed += reclaimedThisPass;
+    }
   }
 
   pruneExpired(fullOutageActive = false): PruneResult {
@@ -500,7 +526,8 @@ export class SQLiteReservoir {
     const result = this.#prepare(
       `UPDATE ingress_events
          SET replay_state = ?,
-             retry_not_before_ms = ?
+             retry_not_before_ms = ?,
+             replay_claimed_at_ms = NULL
          WHERE rowid IN (${placeholders})`,
     ).run(
       nextState,
@@ -575,6 +602,25 @@ export class SQLiteReservoir {
       hard_cutoff: toSqlBigInt(hardCutoff),
       rolling_cutoff: toSqlBigInt(rollingCutoff),
       limit,
+    }) as unknown as PruneBatchRow[];
+
+    return rows.map((row) => Number(row.row_id));
+  }
+
+  #selectStaleReplayingRowIds(staleClaimCutoff: bigint): number[] {
+    const rows = this.#prepareReadBigInts(
+      `SELECT rowid AS row_id
+         FROM ingress_events
+         WHERE replay_state = 'replaying'
+           AND (
+             replay_claimed_at_ms IS NULL
+             OR replay_claimed_at_ms <= @stale_claim_cutoff
+           )
+         ORDER BY monitor_ingest_at_ms ASC, rowid ASC
+         LIMIT @limit`,
+    ).all({
+      stale_claim_cutoff: toSqlBigInt(staleClaimCutoff),
+      limit: this.#config.pruneBatchSize,
     }) as unknown as PruneBatchRow[];
 
     return rows.map((row) => Number(row.row_id));
