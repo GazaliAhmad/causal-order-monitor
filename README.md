@@ -2,8 +2,6 @@
 
 Health-aware buffering, replay, and operator monitoring for the `causal-order` stack.
 
-Status: npm currently publishes `v0.1.0`. The current repo state includes the in-progress `v0.1.1` usability and validation work described below.
-
 `@causal-order/monitor` sits between transport ingestion and downstream delivery so your pipeline can keep accepting events, preserve backlog, and recover in a controlled way when `@causal-order/dedupe` or `causal-order` becomes unavailable.
 
 ## Install
@@ -24,22 +22,18 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-The published npm package is currently `v0.1.0`.
+Published version: `v0.1.1`.
 
-That published release includes:
-
-- real harness validation through `@causal-order/testing@0.2.6`
-- replay gate and recovery correctness under `causal-order` outage conditions
-- on-disk SQLite reservoir defaults for realistic wall-clock retention behavior
-- artifact review of backlog accumulation, replay drain, and final reservoir state
-
-The current repo state also includes the `v0.1.1` line of work:
+This release includes:
 
 - built-in `node:sqlite` instead of `better-sqlite3`
 - first-class JSON config loading
 - `CAUSAL_ORDER_MONITOR_CONFIG` support
 - convenience runtime and adapter bootstrapping from file or environment config
 - deterministic 8-node threshold validation for `4h`, `6h`, `202`, and `503` behavior
+- monotonic-backed wall-clock timing inside the default runtime
+- batched SQLite prune enforcement with `reservoir.pruneBatchSize`
+- tracked validation records for the 8-node overnight dual-outage wall-clock run
 
 ## When To Use It
 
@@ -448,17 +442,6 @@ The published release includes:
 - recovery reconciliation fixes so replay can be re-queued if replay-eligible backlog is still present after an apparent completion
 - fast harness validation showing the expected `normal`, `order_buffer_only`, and `replay_through_dedupe` phases with a drained reservoir at completion
 
-## Current `v0.1.1` Work In Repo
-
-The current repo state additionally includes:
-
-- migration from `better-sqlite3` to built-in `node:sqlite`
-- path-specific SQLite startup guidance for deployment failures
-- JSON config loading through `monitor.config.json`
-- config precedence across inline config, `CAUSAL_ORDER_MONITOR_CONFIG`, default config file discovery, and package defaults
-- convenience creators for file-backed and environment-backed runtime or adapter boot
-- deterministic 8-node validation covering `4h` rolling retention, `6h` hard-outage retention, and the `202` / `503` ingress contract
-
 ## Node Support
 
 - Node.js `>=22.13.0`
@@ -495,8 +478,11 @@ The operational harness suites are:
 - `npm run test:monitor-operational-full`
   Uses an 8-node default topology and the broader monitor scenario set for production-shaped validation runs.
 
-Both suite runners write a manifest and aggregate summary into `artifacts/validation/` so artifact review does not depend on manually opening each run directory one by one.
+Tracked release-facing validation records for the overnight 8-node wall-clock dual-outage run are in `validation/`:
+
+- [monitor-dual-outage-8h-wallclock-8nodes.json](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/validation/monitor-dual-outage-8h-wallclock-8nodes.json)
+- [monitor-dual-outage-8h-wallclock-8nodes.md](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/validation/monitor-dual-outage-8h-wallclock-8nodes.md)
 
 ## License
 
-MIT
+[MIT](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/LICENSE)

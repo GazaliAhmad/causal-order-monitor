@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-07-08T00:39:50.4989361Z",
+  "validationName": "monitor-dual-outage-8h-wallclock-8nodes",
+  "sanitized": true,
+  "sourceRun": {
+    "runFolder": "2026-07-07T16-22-08Z-monitor-dual-outage-8h-wallclock-8nodes",
+    "profileName": "monitor-dual-outage",
+    "scenarioId": "monitor-dual-outage",
+    "adapterModule": "@causal-order/transport/testing",
+    "nodeCount": 8,
+    "nodeIds": [
+      "edge-a",
+      "edge-b",
+      "edge-c",
+      "edge-d",
+      "edge-e",
+      "edge-f",
+      "edge-g",
+      "edge-h"
+    ]
+  },
+  "timing": {
+    "startedAtIso": "2026-07-07T16:22:08.627Z",
+    "finishedAtIso": "2026-07-08T00:24:24.031Z",
+    "wallElapsedMs": 28935404,
+    "wallElapsedHuman": "8h 2m 15s",
+    "simulatedElapsedMs": "28935404",
+    "durationTarget": "8h",
+    "timeScale": 1
+  },
+  "workload": {
+    "eventsPerSecond": 18,
+    "chaosMultiplier": 1.9,
+    "batchSize": 200,
+    "lateArrivalPolicy": "flag",
+    "monitorEnabled": true
+  },
+  "results": {
+    "receivedEvents": 644044,
+    "orderedEvents": 636710,
+    "dedupeDroppedDuplicates": 7334,
+    "anomalies": 256334,
+    "anomalyTypes": {
+      "sequence_regression": 11325,
+      "late_arrival": 245009
+    },
+    "monitor": {
+      "bufferedEvents": 14031,
+      "forwardedToDedupe": 644044,
+      "forwardedToOrder": 0,
+      "routingModes": {
+        "normal": 630013,
+        "full_outage_buffer": 13577,
+        "replay_through_dedupe": 454
+      },
+      "deliveryModes": {
+        "normal": 630013,
+        "full_outage_buffer": 13577,
+        "replay_through_dedupe": 454
+      },
+      "finalReplayState": "idle",
+      "endedDrained": true,
+      "pendingRows": 0,
+      "retryWaitingRows": 0,
+      "pauseDetected": false
+    }
+  },
+  "evidence": {
+    "scenarioTransitions": [
+      {
+        "timestampIso": "2026-07-07T16:22:08.781Z",
+        "component": "dedupe",
+        "state": "online",
+        "scenarioLabel": "healthy_or_recovery"
+      },
+      {
+        "timestampIso": "2026-07-07T16:22:08.790Z",
+        "component": "causal-order",
+        "state": "online",
+        "scenarioLabel": "healthy_or_recovery"
+      }
+    ],
+    "deepOutageEntry": {
+      "timestampIso": "2026-07-07T18:48:08.767Z",
+      "action": "buffer_only",
+      "routingMode": "full_outage_buffer",
+      "deliveryMode": "full_outage_buffer",
+      "reason": "downstream ordering path unavailable"
+    },
+    "replayLifecycle": [
+      {
+        "timestampIso": "2026-07-07T19:00:08.862Z",
+        "state": "queued",
+        "queuedEventCount": 13577,
+        "deliveredEventCount": 0
+      },
+      {
+        "timestampIso": "2026-07-07T19:00:08.911Z",
+        "state": "running",
+        "queuedEventCount": 13577,
+        "deliveredEventCount": 0
+      },
+      {
+        "timestampIso": "2026-07-07T19:00:43.980Z",
+        "state": "completed",
+        "queuedEventCount": 13932,
+        "deliveredEventCount": 13932
+      }
+    ],
+    "pauseSearch": {
+      "actionPauseMatches": 0,
+      "routingPauseMatches": 0,
+      "summaryPauseMatches": 0
+    }
+  },
+  "interpretation": {
+    "validatedBehavior": [
+      "The 8-node wall-clock run exercised normal flow, deep outage buffering, recovery replay, and final drain.",
+      "During the outage, ingress stayed on the accepted-and-buffered path via buffer_only rather than tripping a protective pause.",
+      "Replay completed successfully after recovery and the SQLite reservoir returned to zero pending rows."
+    ],
+    "notValidated": [
+      "This run did not demonstrate the protective stop path that would surface as HTTP 503 or action pause."
+    ],
+    "notes": [
+      "Replay completion count exceeded the first queued snapshot because additional events arrived and were folded into replay before full drain completed.",
+      "Paths, temp database locations, peer instance identifiers, and host-specific filesystem details were intentionally omitted from this validation artifact."
+    ]
+  }
+}

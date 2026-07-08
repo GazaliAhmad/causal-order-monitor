@@ -20,6 +20,7 @@
 - changed the default monitor runtime clock to a monotonic-backed wall-clock so in-process timing does not move backward when host wall-clock time shifts
 - added an 8-node operational harness suite runner plus aggregate validation summaries for smoke and fuller production-shaped monitor runs
 - added a Node 22 CI smoke pass for the operational harness suite
+- added tracked release-facing validation documents for the overnight 8-node dual-outage wall-clock run under `validation/`
 
 ## v0.1.0
 

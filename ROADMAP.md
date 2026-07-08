@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the shipped `v0.1.0` baseline and the active `v0.1.1` follow-on work for `@causal-order/monitor`.
+This file records the shipped `v0.1.1` baseline for `@causal-order/monitor`.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -16,10 +16,9 @@ This file records the shipped `v0.1.0` baseline and the active `v0.1.1` follow-o
 
 ## Current Release
 
-- Status: `v0.1.0` is the current published package release.
-- The `v0.1.0` package exports a real runtime surface instead of a placeholder package shell.
-- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, and operator-facing inspection output.
-- The current repo state contains additional `v0.1.1` work that has not yet been described here as the published npm baseline.
+- Status: `v0.1.1` is the current published package release.
+- The `v0.1.1` package exports a real runtime surface instead of a placeholder package shell.
+- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, and built-in `node:sqlite`.
 
 ## Package Intent
 
@@ -51,7 +50,7 @@ It is not meant to be:
 
 ## Shipped Scope
 
-The `v0.1.0` release includes:
+The `v0.1.1` release includes:
 
 - exported runtime contracts through `createMonitorRuntime()`, `MonitorRuntime`, and the package subpath entrypoints
 - a SQLite-backed reservoir with rolling `4h` retention and a hard `6h` dual-outage ceiling
@@ -64,10 +63,17 @@ The `v0.1.0` release includes:
 - monitor-aware harness integration and artifacts for `@causal-order/testing`
 - an on-disk default reservoir path at `./.causal-order-monitor/monitor.sqlite`
 - automatic creation of the SQLite parent directory on first boot
+- built-in `node:sqlite` instead of `better-sqlite3`
+- JSON config loading through `monitor.config.json`
+- `CAUSAL_ORDER_MONITOR_CONFIG` support and explicit config precedence
+- convenience runtime and adapter boot helpers for file-backed or environment-backed startup
+- monotonic-backed wall-clock timing inside the default runtime
+- batched prune enforcement through `reservoir.pruneBatchSize`
+- tracked release-facing validation records for the overnight 8-node dual-outage wall-clock run
 
 ## Fixed Release Decisions
 
-These behaviors are fixed in the `v0.1.0` release:
+These behaviors are fixed in the `v0.1.1` release:
 
 - the healthy buffer is always active and rolling for `4h`
 - the dual-outage retention ceiling is a hard `6h` maximum
@@ -79,7 +85,7 @@ These behaviors are fixed in the `v0.1.0` release:
 
 ## Validation Evidence
 
-The `v0.1.0` release is backed by:
+The `v0.1.1` release is backed by:
 
 - repo-local type validation through `npm run check`
 - inspection regression coverage through `npm run test:inspect-snapshot`
@@ -88,10 +94,17 @@ The `v0.1.0` release is backed by:
 - monitor harness validation through `@causal-order/testing@0.2.6`
 - reviewed harness artifacts showing healthy flow, `order_buffer_only`, replay-through-recovery, and drained completion
 - verified on-disk SQLite default behavior with bounded retained state available for inspection
+- config/env resolution coverage through `npm run test:config-env-resolution`
+- runtime bootstrap coverage through `npm run test:runtime-bootstrap`
+- prune batching coverage through `npm run test:prune-batching`
+- direct retention/admission coverage through `npm run test:retention-admission-contract`
+- deterministic 8-node threshold validation through `npm run test:http-thresholds-8nodes`
+- operational suite coverage through `npm run test:monitor-operational-smoke` and `npm run test:monitor-operational-full`
+- tracked overnight 8-node wall-clock validation in `validation/monitor-dual-outage-8h-wallclock-8nodes.md`
 
 ## Acceptance Summary
 
-`v0.1.0` is the release where:
+`v0.1.1` is the release where:
 
 1. the package exports a real runtime API
 2. SQLite buffering works with rolling `4h` behavior
@@ -107,6 +120,11 @@ The `v0.1.0` release is backed by:
 12. retry timing and failure evidence are visible in runtime state
 13. retry-waiting backlog is visible through reservoir stats and inspection helpers
 14. runtime-facing consumers can retrieve the same inspected operator summary directly from `MonitorRuntime` or `TransportMonitorAdapter`
+15. deployers can configure the package through `monitor.config.json` or `CAUSAL_ORDER_MONITOR_CONFIG`
+16. the package uses built-in `node:sqlite` on Node `>=22.13.0`
+17. retention cleanup runs in bounded SQLite batches instead of one oversized sweep
+18. the `202` / `503` ingress contract is validated directly
+19. the overnight 8-node dual-outage wall-clock run is preserved as tracked release evidence
 
 ## Outcome
 
@@ -127,11 +145,9 @@ then it came back,
 and we hope nothing important got lost or replayed incorrectly
 ```
 
-## `ver0.1.1` Follow-On Scope
+## `v0.1.1` Release Additions
 
-`ver0.1.1` should pick up the next layer of package usability and release hardening after the current `v0.1.0` testing work is accepted.
-
-Completed in the current repo state:
+The `v0.1.1` release adds:
 
 - first-class JSON config support so deployers can provide monitor settings from a file instead of only constructing config in code
 - optional environment-based config path support for deployment-friendly bootstrapping
@@ -142,43 +158,7 @@ Completed in the current repo state:
 - prune hardening so retention-ceiling cleanup happens in manageable batched passes instead of one large lock-heavy sweep
 - direct retention/admission contract validation proving `202`, `503`, no `429`, prune-driven cutoff enforcement, and dead-letter evidence
 - operational harness suite runners and aggregate validation summaries for repeatable 8-node smoke and fuller production-shaped runs
-
-Still planned in the `v0.1.1` line:
-
-- broader long-duration validation durations beyond the new smoke/full harness suite defaults
-
-Planned scope:
-
-- first-class JSON config support so deployers can provide monitor settings from a file instead of only constructing config in code
-- optional environment-based config path support for deployment-friendly bootstrapping
-- safe merge behavior from JSON config onto package defaults
-- operational guidance for deep-outage SQLite write pressure so deployers size host storage and I/O for worst-case buffered ingress
-- prune hardening so retention-ceiling cleanup happens in manageable batches instead of one large lock-heavy sweep
-
-Concrete targets:
-
-- support a package-level config file flow such as `monitor.config.json`
-- support an override path such as `CAUSAL_ORDER_MONITOR_CONFIG`
-- keep the JSON surface limited to deployer-meaningful settings rather than exposing unstable internal structure
-- keep the `v0.1.0` long-duration retention checks as explicit release evidence instead of hand-waving from scaled short-run confidence
-- document that deep `full_outage_buffer` periods can turn peak ingress into sustained SQLite write load
-- batch prune and purge work so large cohorts aging past `fullOutageMaxWindowMs` do not create avoidable SQLite contention spikes
-
-Acceptance themes:
-
-- a deployer can configure the package without writing custom glue code first
-- the roadmap no longer depends on “we ran it manually once” as the main release proof
-- `4h` rolling-window and `6h` hard-cap behavior are backed by direct duration testing, not only extrapolation
-- deployers have explicit guidance on outage-time disk throughput expectations
-- retention enforcement is operationally safe under large backlog cliffs, not just logically correct
-
-Current evidence already added in repo:
-
-- JSON config parsing and validation
-- env-driven config resolution with explicit precedence
-- runtime and adapter boot helpers for file/env config
-- startup SQLite-path failure guidance
-- deterministic 8-node threshold validation with artifact output
+- tracked overnight 8-node dual-outage wall-clock validation records in `validation/`
 
 Retention semantics to preserve and document:
 
@@ -197,3 +177,32 @@ Ingress HTTP semantics to preserve and document:
 - if the event was accepted into the monitor, even if it was only buffered in SQLite, the ingress contract should return `202`
 - if the monitor is refusing admission because it is in a protective stop state, the ingress contract should return `503`
 - this mapping should not use `429 Too Many Requests` for normal monitor buffering or protective-stop semantics
+
+## `v0.1.2` API Tightening
+
+The next version should tighten the public `/monitor` API so the package is easier to understand, easier to maintain, and less repetitive at the top level.
+
+Primary goals:
+
+- keep the stable, high-value integration path centered on `MonitorRuntime`, `TransportMonitorAdapter`, config helpers, snapshots, and inspection
+- reduce public exposure of metadata-only exports and internal implementation building blocks
+- clarify the difference between low-level runtime replay control and higher-level adapter replay orchestration
+- reduce API sprawl in the bootstrap and configuration surface without breaking existing users abruptly
+
+Planned scope:
+
+- de-emphasize metadata-only exports such as `monitorPackageVersion` and `monitorImplementationStatus`
+- review whether `HealthTracker`, `DeliveryRouter`, `ReplayCoordinator`, and `ThrottleController` should remain root-level public exports
+- keep `SQLiteReservoir` public for now, while treating it as an advanced surface rather than a mainline integration path
+- document `MonitorRuntime` replay controls as low-level/manual orchestration APIs
+- document `TransportMonitorAdapter` replay controls as the preferred high-level integration path
+- simplify the README so it emphasizes a smaller core API and treats advanced helpers as secondary
+- narrow bootstrap guidance so the file/env creator helpers are the primary documented entrypoints and the lower-level config resolution helpers are described as advanced composition tools
+- review whether harness metadata exports should stay in the main public surface or move toward testing-oriented documentation only
+
+Acceptance themes:
+
+- a new user can identify the main monitor integration path without scanning internal building blocks
+- the top-level package surface is smaller and more intentional
+- advanced and low-level APIs are still available where needed, but are clearly labeled as such
+- future internal refactors carry less semver burden from incidental exports

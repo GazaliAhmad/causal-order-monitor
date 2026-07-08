@@ -1,4 +1,4 @@
-export const monitorPackageVersion = "0.1.0";
+export const monitorPackageVersion = "0.1.1";
 
 export type MonitorImplementationStatus = "replay_operational";
 
