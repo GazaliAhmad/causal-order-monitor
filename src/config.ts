@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import type { MonitorThrottleTier } from "./types/events.js";
 import {
+  createDefaultMonitorNow,
   createDefaultMonitorConfig,
   DEFAULT_MONITOR_CONFIG_FILE,
   type MonitorComponentHealthConfig,
@@ -608,6 +609,7 @@ export function loadMonitorConfigFromEnvironment(
 }
 
 export {
+  createDefaultMonitorNow,
   createDefaultMonitorConfig,
   DEFAULT_MONITOR_CONFIG_FILE,
   type MonitorComponentHealthConfig,

@@ -71,6 +71,7 @@ export class TransportMonitorAdapter {
     config: Partial<MonitorConfig> = {},
   ) {
     this.#runtime = new MonitorRuntime(config);
+    this.#runtime.bindReplayOrchestrationOwner("adapter");
     this.#handlers = handlers;
   }
 
@@ -162,7 +163,7 @@ export class TransportMonitorAdapter {
   }
 
   async pumpReplayBatch(limit?: number): Promise<ReplayPumpResult> {
-    const batch = this.#runtime.claimReplayBatch(limit);
+    const batch = this.#runtime.claimManagedReplayBatch(limit);
     await this.#notifyReplayChange();
 
     if (batch.entries.length === 0) {
@@ -188,7 +189,7 @@ export class TransportMonitorAdapter {
         });
       }
 
-      const snapshot = this.#runtime.acknowledgeReplayBatch(claimedRowIds);
+      const snapshot = this.#runtime.acknowledgeManagedReplayBatch(claimedRowIds);
       await this.#notifyReplayChange();
       return {
         snapshot,
@@ -199,7 +200,7 @@ export class TransportMonitorAdapter {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "unknown replay failure";
-      const snapshot = this.#runtime.failReplay(message, claimedRowIds);
+      const snapshot = this.#runtime.failManagedReplay(message, claimedRowIds);
       await this.#notifyReplayChange();
       return {
         snapshot,
@@ -244,11 +245,22 @@ export class TransportMonitorAdapter {
     }
 
     if (
+      (
+        snapshot.state === "idle" ||
+        snapshot.state === "failed" ||
+        snapshot.state === "completed"
+      ) &&
+      !this.#runtime.isReplayRecoveryConfirmed()
+    ) {
+      return null;
+    }
+
+    if (
       snapshot.state === "idle" ||
       snapshot.state === "failed" ||
       snapshot.state === "completed"
     ) {
-      this.#runtime.queueReplay();
+      this.#runtime.queueManagedReplay();
       await this.#notifyReplayChange();
     }
 

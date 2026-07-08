@@ -22,7 +22,7 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-Published version: `v0.1.1`.
+Published version: `v0.1.2`.
 
 This release includes:
 
@@ -30,6 +30,7 @@ This release includes:
 - first-class JSON config loading
 - `CAUSAL_ORDER_MONITOR_CONFIG` support
 - convenience runtime and adapter bootstrapping from file or environment config
+- typed replay ownership failures and stricter replay recovery gating
 - deterministic 8-node threshold validation for `4h`, `6h`, `202`, and `503` behavior
 - monotonic-backed wall-clock timing inside the default runtime
 - batched SQLite prune enforcement with `reservoir.pruneBatchSize`
@@ -48,10 +49,21 @@ Use this package when you already have a `causal-order` pipeline and want a moni
 
 The package gives you two main integration styles:
 
-- `createMonitorRuntime()` or `MonitorRuntime` if you want direct control over ingress, health updates, replay, and storage
 - `TransportMonitorAdapter` if you want a higher-level wrapper that calls your delivery handlers and manages replay pumping through that adapter surface
+- `createMonitorRuntime()` or `MonitorRuntime` if you want direct control over ingress, health updates, replay, and storage
 
-Other exported building blocks include:
+For most application integrations, prefer `TransportMonitorAdapter`.
+
+Use `MonitorRuntime` when you intentionally want the lower-level/manual orchestration path.
+
+These are now enforced as separate replay-orchestration styles on the same runtime instance:
+
+- adapter-managed replay through `TransportMonitorAdapter`
+- manual replay control through `MonitorRuntime`
+
+If a runtime is adapter-managed, direct manual replay commands on that runtime now fail fast with `ReplayOwnershipError` instead of allowing mixed control ownership.
+
+Advanced and specialist exports also exist, but they are not the main package entrypoint story:
 
 - `HealthTracker`
 - `DeliveryRouter`
@@ -59,6 +71,8 @@ Other exported building blocks include:
 - `ReplayCoordinator`
 - `SQLiteReservoir`
 - `inspectMonitorSnapshot()`
+
+Testing-oriented metadata also exists for harness integration, but it is a secondary surface rather than the normal runtime path.
 
 ## Subpath Imports
 
@@ -71,16 +85,25 @@ The package now exposes official subpath entrypoints so consumers can import nar
 - `@causal-order/monitor/routing`
 - `@causal-order/monitor/runtime`
 - `@causal-order/monitor/storage`
+- `@causal-order/monitor/testing`
 - `@causal-order/monitor/throttle`
 - `@causal-order/monitor/transport`
 - `@causal-order/monitor/types`
 
-The most lightweight analyzer-friendly entrypoints are:
+Recommended subpath choices:
+
+- `@causal-order/monitor/transport` when you want the preferred higher-level integration path
+- `@causal-order/monitor/runtime` when you want the lower-level/manual runtime path
+- `@causal-order/monitor/config` when you only need config loading and config-related helpers
+- `@causal-order/monitor/testing` when you only need harness metadata exports
+
+Lightweight analyzer-friendly entrypoints are:
 
 - `@causal-order/monitor/config`
 - `@causal-order/monitor/health`
 - `@causal-order/monitor/inspect`
 - `@causal-order/monitor/routing`
+- `@causal-order/monitor/testing`
 - `@causal-order/monitor/throttle`
 - `@causal-order/monitor/types`
 
@@ -178,8 +201,9 @@ Recovery is intentionally conservative:
 - the rolling SQLite buffer defaults to `4h`
 - the maximum dual-outage retention window defaults to `6h`
 - replay returns through `@causal-order/dedupe`
+- replay waits for configured recovery confirmation before it starts draining after a real downstream recovery transition
 - replay failure applies a retry backoff before trying again
-- live flow stays gated while replay recovery is failed or actively draining
+- live flow stays gated during pre-replay confirmation, failed replay backoff, active replay drain, and post-replay confirmation
 
 ## Ingress HTTP Semantics
 
@@ -210,6 +234,14 @@ In practical terms:
 So the current behavior is closer to “drop older buffered rows once they age past the ceiling” than “reject every new ingress immediately at the ceiling.”
 
 ## Configuration
+
+For most deployments, the preferred bootstrap path is:
+
+1. `loadMonitorConfigFile()` or `loadMonitorConfigFromEnvironment()` if you want an explicit config-loading step
+2. `createMonitorRuntimeFromFile()` or `createMonitorRuntimeFromEnvironment()` if you want direct runtime bootstrapping
+3. `createTransportMonitorAdapterFromFile()` or `createTransportMonitorAdapterFromEnvironment()` if you want the preferred adapter integration path with file/env config
+
+The lower-level `resolveMonitorConfig()` and `resolveMonitorConfigFromEnvironment()` helpers are still public, but they are better treated as advanced composition tools than the first thing most deployers should reach for.
 
 `createDefaultMonitorConfig()` returns the full configuration shape. Common settings:
 
@@ -340,6 +372,8 @@ If `CAUSAL_ORDER_MONITOR_CONFIG` is set, the monitor treats that as authoritativ
 
 Supported duration values in JSON can be either integer milliseconds or strings like `15000ms`, `30s`, `5m`, or `4h`.
 
+If you need the package's monotonic-backed default clock factory directly, `createDefaultMonitorNow()` is also available. Most consumers do not need to call it explicitly unless they are composing lower-level runtime config.
+
 Example `monitor.config.json`:
 
 ```json
@@ -414,7 +448,7 @@ The inspected snapshot is the easiest entry point when you want a quick read on:
 
 - current operational posture
 - whether live flow is gated
-- whether replay is ready or retry-waiting
+- whether replay is waiting on pre-replay confirmation, retry-waiting, actively draining, or in post-replay confirmation
 - backlog size and replay progress
 - whether operator attention is needed
 
@@ -430,17 +464,41 @@ Key exported types include:
 - `ReservoirStats`
 - `InspectedMonitorSnapshot`
 
-## Version `v0.1.0`
+## Advanced And Testing Surfaces
+
+The package also publishes some specialist surfaces that are real and supported, but secondary to the main runtime and adapter path.
+
+Advanced/runtime-building surfaces:
+
+- `HealthTracker`
+- `DeliveryRouter`
+- `ThrottleController`
+- `ReplayCoordinator`
+- `SQLiteReservoir`
+
+Testing-oriented surfaces:
+
+- `monitorHarnessArtifacts`
+- `monitorHarnessScenarios`
+- harness metadata types through `@causal-order/monitor/testing`
+
+Compatibility-only metadata surfaces:
+
+- `monitorPackageVersion`
+- `monitorImplementationStatus`
+
+These are part of the public package surface today, but they are not the mainline integration story most consumers should start with.
+
+## Version `v0.1.2`
 
 The published release includes:
 
-- defaulting the reservoir to an on-disk SQLite file instead of `:memory:`
-- auto-creating the SQLite parent directory for first-run deployment safety
-- a local harness wrapper so `@causal-order/testing@0.2.6` can validate this repo's built monitor directly
-- a focused healthy-flow regression proving replay does not start incorrectly
-- replay gate fixes so live flow does not reopen before required recovery heartbeats and backlog drain are both satisfied
-- recovery reconciliation fixes so replay can be re-queued if replay-eligible backlog is still present after an apparent completion
-- fast harness validation showing the expected `normal`, `order_buffer_only`, and `replay_through_dedupe` phases with a drained reservoir at completion
+- explicit subpath export coverage, including `@causal-order/monitor/testing`
+- a published `@causal-order/monitor/config` home for `createDefaultMonitorNow`
+- typed replay ownership failures through `ReplayOwnershipError`
+- pre-replay recovery confirmation so brief reconnect jitter does not immediately reopen live flow into replay
+- replay retry/backoff and confirmation states surfaced more clearly through inspected snapshots
+- stale replay-claim recovery so abandoned `replaying` rows can be reclaimed safely
 
 ## Node Support
 
@@ -453,6 +511,7 @@ This package is validated in-repo with:
 
 - `npm run check`
 - `npm run test:config-env-resolution`
+- `npm run test:export-contract`
 - `npm run test:http-thresholds-8nodes`
 - `npm run test:inspect-snapshot`
 - `npm run test:monitor-operational-smoke`
@@ -460,6 +519,7 @@ This package is validated in-repo with:
 - `npm run test:no-healthy-replay`
 - `npm run test:monitor-operational-full`
 - `npm run test:prune-batching`
+- `npm run test:replay-ownership-guard`
 - `npm run test:retention-admission-contract`
 - `npm run test:runtime-bootstrap`
 - `npm run test:replay-safety`

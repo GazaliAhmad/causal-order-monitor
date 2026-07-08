@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.2
+
+- treated `v0.1.2` as a safer API-tightening preparation release instead of an aggressive root-surface deprecation pass
+- added explicit export-contract validation proving root-only exports, published subpaths, and packaged import/types targets resolve as expected
+- added a published `@causal-order/monitor/testing` subpath so harness metadata no longer depends only on the root entrypoint
+- added a published `@causal-order/monitor/config` home for `createDefaultMonitorNow` so it is no longer root-only
+- added a typed replay ownership guard so adapter-managed runtimes reject direct manual replay commands with a dedicated `ReplayOwnershipError` instead of allowing mixed replay control on the same runtime instance
+- added repo validation proving adapter-managed replay and manual runtime replay are treated as mutually exclusive control styles
+- hardened recovery replay start so live flow stays clamped during pre-replay health confirmation instead of reopening immediately on a brief healthy transition
+- kept replay retry backoff and post-replay confirmation visible through the inspected snapshot so operators can distinguish retry waiting, pre-replay confirmation, active drain, and post-replay confirmation
+- added stale replay-claim recovery so rows that were claimed for replay but never acknowledged can be reclaimed safely instead of remaining stuck in `replaying`
+- updated README guidance to center `TransportMonitorAdapter`, `MonitorRuntime`, file/env bootstrap helpers, and inspection helpers as the preferred integration path
+- reclassified advanced, testing-oriented, and compatibility-only surfaces in the docs without removing them from the public contract
+- aligned roadmap and local implementation docs around export inventory, migration-path safety, and validation-first cleanup
+
 ## v0.1.1
 
 - replaced `better-sqlite3` with the built-in `node:sqlite` backend

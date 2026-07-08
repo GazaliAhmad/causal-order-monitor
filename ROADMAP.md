@@ -180,29 +180,38 @@ Ingress HTTP semantics to preserve and document:
 
 ## `v0.1.2` API Tightening
 
-The next version should tighten the public `/monitor` API so the package is easier to understand, easier to maintain, and less repetitive at the top level.
+The next version should make future `/monitor` API tightening safer.
+
+The purpose of `v0.1.2` is not to remove or broadly deprecate public APIs immediately.
+
+The purpose is to make later cleanup safe by first aligning the published surface, migration paths, and validation story.
 
 Primary goals:
 
 - keep the stable, high-value integration path centered on `MonitorRuntime`, `TransportMonitorAdapter`, config helpers, snapshots, and inspection
-- reduce public exposure of metadata-only exports and internal implementation building blocks
+- identify which current root exports already have published subpath migration paths and which do not
 - clarify the difference between low-level runtime replay control and higher-level adapter replay orchestration
-- reduce API sprawl in the bootstrap and configuration surface without breaking existing users abruptly
+- add export-contract safety so future cleanup does not break existing users abruptly
+- document a smaller preferred integration story without treating documentation cleanup alone as safe deprecation proof
 
 Planned scope:
 
-- de-emphasize metadata-only exports such as `monitorPackageVersion` and `monitorImplementationStatus`
-- review whether `HealthTracker`, `DeliveryRouter`, `ReplayCoordinator`, and `ThrottleController` should remain root-level public exports
-- keep `SQLiteReservoir` public for now, while treating it as an advanced surface rather than a mainline integration path
+- inventory the current published root exports and subpath exports as an explicit compatibility contract
+- add validation that proves root exports and published subpath imports resolve as intended
 - document `MonitorRuntime` replay controls as low-level/manual orchestration APIs
 - document `TransportMonitorAdapter` replay controls as the preferred high-level integration path
 - simplify the README so it emphasizes a smaller core API and treats advanced helpers as secondary
 - narrow bootstrap guidance so the file/env creator helpers are the primary documented entrypoints and the lower-level config resolution helpers are described as advanced composition tools
-- review whether harness metadata exports should stay in the main public surface or move toward testing-oriented documentation only
+- treat `HealthTracker`, `DeliveryRouter`, `ReplayCoordinator`, `ThrottleController`, and `SQLiteReservoir` as safer later deprecation candidates because published subpath homes already exist
+- do not begin deprecating root-only exports until published migration paths exist for them
+- add a published migration path for harness metadata before considering any future move away from the root entrypoint
+- decide on a published home for `createDefaultMonitorNow` before considering any future root-level deprecation
+- leave metadata-only root exports such as `monitorPackageVersion` and `monitorImplementationStatus` in compatibility status until a safe migration path or later breaking strategy is explicit
 
 Acceptance themes:
 
 - a new user can identify the main monitor integration path without scanning internal building blocks
-- the top-level package surface is smaller and more intentional
+- the package has an explicit export-compatibility story instead of relying on assumptions about which APIs are safe to move
 - advanced and low-level APIs are still available where needed, but are clearly labeled as such
-- future internal refactors carry less semver burden from incidental exports
+- future deprecations can point to real published migration targets instead of only documentation guidance
+- future internal refactors carry less semver risk because export resolution and compatibility are validated directly

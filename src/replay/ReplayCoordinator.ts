@@ -51,6 +51,13 @@ export class ReplayCoordinator {
     return { ...this.#snapshot };
   }
 
+  hasRecoveryConfirmation(): boolean {
+    return (
+      this.#snapshot.recoveryHeartbeatCount >=
+      this.#snapshot.requiredRecoveryHeartbeats
+    );
+  }
+
   isGateClosed(): boolean {
     return (
       this.#snapshot.state === "queued" ||
@@ -150,6 +157,7 @@ export class ReplayCoordinator {
       );
     }
 
+    this.#reservoir.reclaimStaleReplayRows(this.#config.retryBackoffMs);
     const entries = this.#reservoir.claimReplayBatch(limit);
 
     if (entries.length === 0) {
@@ -230,11 +238,11 @@ export class ReplayCoordinator {
     state: MonitorHealthState,
     allHealthy: boolean,
   ): ReplaySessionSnapshot {
-    if (this.#snapshot.state !== "completed") {
+    if (component === "transport") {
       return this.getSnapshot();
     }
 
-    if (component === "transport") {
+    if (this.#snapshot.state === "running") {
       return this.getSnapshot();
     }
 
@@ -245,13 +253,17 @@ export class ReplayCoordinator {
       });
     }
 
-    const recoveryHeartbeatCount = this.#snapshot.recoveryHeartbeatCount + 1;
+    const recoveryHeartbeatCount = Math.min(
+      this.#snapshot.recoveryHeartbeatCount + 1,
+      this.#config.healthConfirmationHeartbeats,
+    );
     const nextSnapshot = this.#commit({
       ...this.#snapshot,
       recoveryHeartbeatCount,
     });
 
     if (
+      this.#snapshot.state === "completed" &&
       recoveryHeartbeatCount >= this.#config.healthConfirmationHeartbeats &&
       this.#reservoir.getStats().totalPendingRows === 0
     ) {

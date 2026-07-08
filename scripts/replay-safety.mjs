@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { TransportMonitorAdapter } from "../.build/src/index.js";
+import {
+  MonitorRuntime,
+  TransportMonitorAdapter,
+} from "../.build/src/index.js";
 
 function createEvent(id, ingestedAt) {
   return {
@@ -105,6 +108,9 @@ async function runRetryWindowScenario() {
     assert.equal(replayAttempts, 1);
 
     nowMs = 5_000n;
+    adapter.observeHeartbeat("dedupe", nowMs, {
+      scenario: "retry-window-recovery-confirmation",
+    });
     const recoveredReplay = await adapter.reconcileRecovery(1);
     assert.ok(recoveredReplay);
     assert.equal(replayAttempts, 2);
@@ -190,9 +196,75 @@ async function runHardCutoffScenario() {
   }
 }
 
+function runStaleReplayClaimScenario() {
+  const workspace = mkdtempSync(join(tmpdir(), "monitor-replay-stale-claim-"));
+  const databasePath = join(workspace, "monitor.sqlite");
+  let nowMs = 0n;
+
+  const runtime = new MonitorRuntime({
+    now: () => nowMs,
+    reservoir: {
+      databasePath,
+      rollingBufferWindowMs: 5_000n,
+      fullOutageMaxWindowMs: 6_000n,
+      pruneIntervalMs: 100n,
+    },
+    replay: {
+      healthConfirmationHeartbeats: 1,
+      pauseLiveFlowDuringReplay: true,
+      retryBackoffMs: 1_000n,
+    },
+  });
+
+  try {
+    runtime.updateComponentHealth("transport", {
+      state: "online",
+      observedAt: nowMs,
+      details: {},
+    });
+    runtime.updateComponentHealth("dedupe", {
+      state: "online",
+      observedAt: nowMs,
+      details: {},
+    });
+    runtime.updateComponentHealth("causal-order", {
+      state: "offline",
+      observedAt: nowMs,
+      details: {},
+    });
+
+    runtime.ingestTransportEvent(createEvent("event-stale-1", nowMs));
+
+    runtime.updateComponentHealth("causal-order", {
+      state: "online",
+      observedAt: nowMs,
+      details: {},
+    });
+
+    runtime.queueReplay();
+    const firstBatch = runtime.claimReplayBatch(1);
+    assert.equal(firstBatch.entries.length, 1);
+    assert.equal(runtime.getReservoirStats().totalPendingRows, 1);
+
+    nowMs = 1_500n;
+    const pruneResult = runtime.pruneReservoir();
+    assert.equal(pruneResult.markedDeadLetter, 0);
+    assert.equal(runtime.getReservoirStats().totalPendingRows, 1);
+
+    const recoveredBatch = runtime.claimReplayBatch(1);
+    assert.equal(recoveredBatch.entries.length, 1);
+    runtime.acknowledgeReplayBatch([recoveredBatch.entries[0].rowId]);
+    assert.equal(runtime.getReservoirStats().totalPendingRows, 0);
+  } finally {
+    runtime.close();
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
+
 await runRetryWindowScenario();
 await runHardCutoffScenario();
+runStaleReplayClaimScenario();
 
 console.log(
-  "replay safety passed: retry-waiting rows survive rolling prune, do not replay early, and dead-letter only at hard cutoff",
+  "replay safety passed: retry-waiting rows survive rolling prune, stale replay claims are recoverable, do not replay early, and dead-letter only at hard cutoff",
 );

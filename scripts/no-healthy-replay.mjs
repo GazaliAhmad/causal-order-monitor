@@ -53,7 +53,7 @@ const adapter = new TransportMonitorAdapter(
       pruneIntervalMs: 100n,
     },
     replay: {
-      healthConfirmationHeartbeats: 1,
+      healthConfirmationHeartbeats: 3,
       pauseLiveFlowDuringReplay: true,
       retryBackoffMs: 5_000n,
     },
@@ -113,7 +113,22 @@ try {
     },
   });
 
-  const recoveredReplay = await adapter.reconcileRecovery(1);
+  assert.equal(await adapter.reconcileRecovery(1), null);
+
+  const gatedRecoveryResult = await adapter.ingest(createEvent("event-recovery-gated-1", nowMs));
+  assert.equal(gatedRecoveryResult.forwardedTo, "buffer");
+  assert.match(
+    gatedRecoveryResult.decision.reason,
+    /recovery confirmation holding live flow before replay start/i,
+  );
+
+  adapter.observeHeartbeat("dedupe", nowMs, {
+    scenario: "pre-replay-confirmation-heartbeat-1",
+  });
+  adapter.observeHeartbeat("causal-order", nowMs, {
+    scenario: "pre-replay-confirmation-heartbeat-2",
+  });
+  const recoveredReplay = await adapter.reconcileRecovery(2);
   assert.ok(recoveredReplay);
   assert.ok(
     recoveredReplay.snapshot.state === "completed" ||
@@ -135,6 +150,9 @@ try {
   adapter.observeHeartbeat("causal-order", nowMs, {
     scenario: "post-recovery-heartbeat-2",
   });
+  adapter.observeHeartbeat("dedupe", nowMs, {
+    scenario: "post-recovery-heartbeat-3",
+  });
   const gatedReplay = await adapter.reconcileRecovery(1);
   assert.ok(gatedReplay);
   assert.ok(
@@ -148,6 +166,9 @@ try {
   });
   adapter.observeHeartbeat("causal-order", nowMs, {
     scenario: "post-gated-replay-heartbeat-2",
+  });
+  adapter.observeHeartbeat("dedupe", nowMs, {
+    scenario: "post-gated-replay-heartbeat-3",
   });
   assert.equal(adapter.getReplaySnapshot().state, "idle");
 
