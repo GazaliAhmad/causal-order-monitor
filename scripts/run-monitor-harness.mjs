@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -33,7 +34,7 @@ function sanitizeFileStem(value) {
 
 const runName = findOptionValue(userArgs, "--run-name");
 const defaultMonitorDbPath = resolve(
-  "artifacts",
+  tmpdir(),
   `${sanitizeFileStem(runName ?? "monitor-harness")}.sqlite`,
 );
 

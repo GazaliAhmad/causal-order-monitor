@@ -1,4 +1,6 @@
 export {
+  createTransportMonitorAdapterFromEnvironment,
+  createTransportMonitorAdapterFromFile,
   TransportMonitorAdapter,
   type MonitorAdapterForwardContext,
   type MonitorAdapterHandlers,

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22]
 
     steps:
       - name: Checkout
@@ -28,3 +28,6 @@ jobs:
 
       - name: Run CI checks
         run: npm run ci
+
+      - name: Run Monitor Operational Smoke
+        run: npm run test:monitor-operational-smoke

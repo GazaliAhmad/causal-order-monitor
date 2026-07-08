@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import type { DatabaseSync } from "node:sqlite";
 
 export const MONITOR_SQLITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS ingress_events (
@@ -29,6 +29,12 @@ CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_state
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_retry
   ON ingress_events(replay_state, retry_not_before_ms);
+
+CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_ingest_time
+  ON ingress_events(replay_state, monitor_ingest_at_ms);
+
+CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_expiry
+  ON ingress_events(replay_state, expires_at_ms);
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_source_path
   ON ingress_events(source_path);
@@ -68,7 +74,7 @@ CREATE TABLE IF NOT EXISTS replay_sessions (
 );
 `;
 
-export function applyMonitorSchema(db: InstanceType<typeof Database>): void {
+export function applyMonitorSchema(db: DatabaseSync): void {
   db.exec(MONITOR_SQLITE_SCHEMA);
 
   const ingressColumns = db

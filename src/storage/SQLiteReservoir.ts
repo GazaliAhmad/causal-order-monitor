@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import type { MonitorReservoirConfig } from "../types/config.js";
 import type {
@@ -45,7 +45,31 @@ interface PruneResult {
   deletedRows: number;
 }
 
+interface PruneBatchRow {
+  row_id: bigint;
+}
+
 const BIGINT_SENTINEL = "__monitorBigInt";
+
+function normalizeDatabasePath(databasePath: string): string {
+  return databasePath === ":memory:" ? databasePath : resolve(databasePath);
+}
+
+function toReservoirStartupError(
+  databasePath: string,
+  error: unknown,
+): Error {
+  const reason = error instanceof Error ? error.message : String(error);
+  const resolvedPath = normalizeDatabasePath(databasePath);
+  return new Error(
+    `Failed to initialize monitor SQLite reservoir at "${resolvedPath}". ` +
+      `Ensure the path is on a writable local filesystem for this host process. ` +
+      `Recommended examples are "./.causal-order-monitor/monitor.sqlite" during development ` +
+      `or a server-local path such as "/var/lib/causal-order-monitor/monitor.sqlite" in production. ` +
+      `Avoid read-only mounts, synced workspace folders, and unvalidated network filesystems. ` +
+      `SQLite startup error: ${reason}`,
+  );
+}
 
 function toSqlBigInt(value: bigint): bigint {
   return value;
@@ -105,16 +129,22 @@ function deserializeJson<T>(value: string): T {
 export class SQLiteReservoir {
   readonly #config: MonitorReservoirConfig;
   readonly #now: () => bigint;
-  readonly #db: InstanceType<typeof Database>;
+  readonly #db: DatabaseSync;
 
   constructor(config: MonitorReservoirConfig, now: () => bigint) {
     this.#config = config;
     this.#now = now;
-    if (config.databasePath !== ":memory:") {
-      mkdirSync(dirname(resolve(config.databasePath)), { recursive: true });
+    try {
+      if (config.databasePath !== ":memory:") {
+        mkdirSync(dirname(normalizeDatabasePath(config.databasePath)), {
+          recursive: true,
+        });
+      }
+      this.#db = new DatabaseSync(config.databasePath);
+      applyMonitorSchema(this.#db);
+    } catch (error) {
+      throw toReservoirStartupError(config.databasePath, error);
     }
-    this.#db = new Database(config.databasePath);
-    applyMonitorSchema(this.#db);
   }
 
   appendIngressEvent(
@@ -130,9 +160,8 @@ export class SQLiteReservoir {
       options.replayState ??
       (options.sourcePath === "deduped_observation" ? "delivered" : "pending");
 
-    const result = this.#db
-      .prepare(
-        `INSERT INTO ingress_events (
+    const result = this.#prepare(
+      `INSERT INTO ingress_events (
           id,
           monitor_ingest_at_ms,
           source_node_id,
@@ -167,36 +196,34 @@ export class SQLiteReservoir {
           @retry_not_before_ms,
           @expires_at_ms
         )`,
-      )
-      .run({
-        id: event.id,
-        monitor_ingest_at_ms: toSqlBigInt(monitorIngestAt),
-        source_node_id: event.nodeId,
-        source_stream_id: options.sourceStreamId ?? null,
-        source_path: options.sourcePath,
-        event_id: event.id,
-        trace_id: event.traceId ?? event.payload.traceId ?? null,
-        sequence: event.sequence?.toString() ?? null,
-        logical_time_ms: toSqlBigInt(event.clock.physicalTimeMs),
-        payload_json: serializeJson(event),
-        payload_encoding: "json",
-        delivery_mode: options.deliveryMode,
-        replay_state: replayState,
-        replay_attempts: 0,
-        retry_not_before_ms:
-          options.retryNotBeforeMs === null || options.retryNotBeforeMs === undefined
-            ? null
-            : toSqlBigInt(options.retryNotBeforeMs),
-        expires_at_ms: toSqlBigInt(expiresAt),
-      });
+    ).run({
+      id: event.id,
+      monitor_ingest_at_ms: toSqlBigInt(monitorIngestAt),
+      source_node_id: event.nodeId,
+      source_stream_id: options.sourceStreamId ?? null,
+      source_path: options.sourcePath,
+      event_id: event.id,
+      trace_id: event.traceId ?? event.payload.traceId ?? null,
+      sequence: event.sequence?.toString() ?? null,
+      logical_time_ms: toSqlBigInt(event.clock.physicalTimeMs),
+      payload_json: serializeJson(event),
+      payload_encoding: "json",
+      delivery_mode: options.deliveryMode,
+      replay_state: replayState,
+      replay_attempts: 0,
+      retry_not_before_ms:
+        options.retryNotBeforeMs === null || options.retryNotBeforeMs === undefined
+          ? null
+          : toSqlBigInt(options.retryNotBeforeMs),
+      expires_at_ms: toSqlBigInt(expiresAt),
+    });
 
     return Number(result.lastInsertRowid);
   }
 
   recordHealthTransition(snapshot: MonitorComponentHealthSnapshot): number {
-    const result = this.#db
-      .prepare(
-        `INSERT INTO component_health_log (
+    const result = this.#prepare(
+      `INSERT INTO component_health_log (
           recorded_at_ms,
           component,
           health_state,
@@ -209,22 +236,20 @@ export class SQLiteReservoir {
           @reason_code,
           @details_json
         )`,
-      )
-      .run({
-        recorded_at_ms: toSqlBigInt(snapshot.observedAt),
-        component: snapshot.component,
-        health_state: snapshot.state,
-        reason_code: snapshot.reasonCode,
-        details_json: serializeJson(snapshot.details),
-      });
+    ).run({
+      recorded_at_ms: toSqlBigInt(snapshot.observedAt),
+      component: snapshot.component,
+      health_state: snapshot.state,
+      reason_code: snapshot.reasonCode,
+      details_json: serializeJson(snapshot.details),
+    });
 
     return Number(result.lastInsertRowid);
   }
 
   recordReplaySnapshot(snapshot: ReplaySessionSnapshot): number {
-    const result = this.#db
-      .prepare(
-        `INSERT INTO replay_sessions (
+    const result = this.#prepare(
+      `INSERT INTO replay_sessions (
           started_at_ms,
           ended_at_ms,
           target_path,
@@ -243,25 +268,24 @@ export class SQLiteReservoir {
           @error_count,
           @details_json
         )`,
-      )
-      .run({
-        started_at_ms:
-          snapshot.startedAt === null ? null : toSqlBigInt(snapshot.startedAt),
-        ended_at_ms:
-          snapshot.endedAt === null ? null : toSqlBigInt(snapshot.endedAt),
-        target_path: snapshot.targetPath,
-        session_state: snapshot.state,
-        event_count_attempted: snapshot.queuedEventCount,
-        event_count_delivered: snapshot.deliveredEventCount,
-        error_count: snapshot.lastError ? 1 : 0,
-        details_json: serializeJson({
-          lastError: snapshot.lastError,
-          nextRetryAt: snapshot.nextRetryAt,
-          consecutiveFailureCount: snapshot.consecutiveFailureCount,
-          recoveryHeartbeatCount: snapshot.recoveryHeartbeatCount,
-          requiredRecoveryHeartbeats: snapshot.requiredRecoveryHeartbeats,
-        }),
-      });
+    ).run({
+      started_at_ms:
+        snapshot.startedAt === null ? null : toSqlBigInt(snapshot.startedAt),
+      ended_at_ms:
+        snapshot.endedAt === null ? null : toSqlBigInt(snapshot.endedAt),
+      target_path: snapshot.targetPath,
+      session_state: snapshot.state,
+      event_count_attempted: snapshot.queuedEventCount,
+      event_count_delivered: snapshot.deliveredEventCount,
+      error_count: snapshot.lastError ? 1 : 0,
+      details_json: serializeJson({
+        lastError: snapshot.lastError,
+        nextRetryAt: snapshot.nextRetryAt,
+        consecutiveFailureCount: snapshot.consecutiveFailureCount,
+        recoveryHeartbeatCount: snapshot.recoveryHeartbeatCount,
+        requiredRecoveryHeartbeats: snapshot.requiredRecoveryHeartbeats,
+      }),
+    });
 
     return Number(result.lastInsertRowid);
   }
@@ -272,14 +296,12 @@ export class SQLiteReservoir {
     const pendingStates =
       limitToStates.length === 0 ? ["pending", "replaying"] : limitToStates;
     const placeholders = pendingStates.map(() => "?").join(", ");
-    const result = this.#db
-      .prepare(
-        `UPDATE ingress_events
+    const result = this.#prepare(
+      `UPDATE ingress_events
          SET replay_attempts = replay_attempts + 1
          WHERE replay_state IN (${placeholders})`,
-      )
-      .run(...pendingStates);
-    return result.changes;
+    ).run(...pendingStates);
+    return Number(result.changes);
   }
 
   updateReplayState(
@@ -287,14 +309,12 @@ export class SQLiteReservoir {
     nextState: ReservoirReplayState,
   ): number {
     const placeholders = fromStates.map(() => "?").join(", ");
-    const result = this.#db
-      .prepare(
-        `UPDATE ingress_events
+    const result = this.#prepare(
+      `UPDATE ingress_events
          SET replay_state = ?
          WHERE replay_state IN (${placeholders})`,
-      )
-      .run(nextState, ...fromStates);
-    return result.changes;
+    ).run(nextState, ...fromStates);
+    return Number(result.changes);
   }
 
   claimReplayBatch(
@@ -305,15 +325,9 @@ export class SQLiteReservoir {
       return [];
     }
 
-    const claim = this.#db.transaction(
-      (
-        nowMs: bigint,
-        batchLimit: number,
-        nextDeliveryMode: MonitorDeliveryMode,
-      ): ReservoirReplayEntry[] => {
-        const rows = this.#db
-          .prepare(
-            `SELECT
+    return this.#withTransaction(() => {
+      const rows = this.#prepareReadBigInts(
+        `SELECT
                rowid AS row_id,
                payload_json,
                source_path,
@@ -324,45 +338,39 @@ export class SQLiteReservoir {
                AND (retry_not_before_ms IS NULL OR retry_not_before_ms <= ?)
              ORDER BY monitor_ingest_at_ms ASC, rowid ASC
              LIMIT ?`,
-          )
-          .all(toSqlBigInt(nowMs), batchLimit) as Array<{
-          row_id: number;
-          payload_json: string;
-          source_path: MonitorSourcePath;
-          source_stream_id: string | null;
-          replay_attempts: number;
-        }>;
+      ).all(toSqlBigInt(this.#now()), limit) as Array<{
+        row_id: bigint;
+        payload_json: string;
+        source_path: MonitorSourcePath;
+        source_stream_id: string | null;
+        replay_attempts: bigint;
+      }>;
 
-        if (rows.length === 0) {
-          return [];
-        }
+      if (rows.length === 0) {
+        return [];
+      }
 
-        const ids = rows.map((row) => row.row_id);
-        const placeholders = ids.map(() => "?").join(", ");
+      const ids = rows.map((row) => Number(row.row_id));
+      const placeholders = ids.map(() => "?").join(", ");
 
-        this.#db
-          .prepare(
-            `UPDATE ingress_events
+      this.#prepare(
+        `UPDATE ingress_events
              SET replay_state = 'replaying',
                  replay_attempts = replay_attempts + 1,
                  retry_not_before_ms = NULL,
                  delivery_mode = ?
              WHERE rowid IN (${placeholders})`,
-          )
-          .run(nextDeliveryMode, ...ids);
+      ).run(deliveryMode, ...ids);
 
-        return rows.map((row) => ({
-          rowId: row.row_id,
-          event: deserializeJson<MonitorIngressEvent>(row.payload_json),
-          sourcePath: row.source_path,
-          sourceStreamId: row.source_stream_id,
-          deliveryMode: nextDeliveryMode,
-          replayAttempts: row.replay_attempts + 1,
-        }));
-      },
-    );
-
-    return claim(this.#now(), limit, deliveryMode);
+      return rows.map((row) => ({
+        rowId: Number(row.row_id),
+        event: deserializeJson<MonitorIngressEvent>(row.payload_json),
+        sourcePath: row.source_path,
+        sourceStreamId: row.source_stream_id,
+        deliveryMode,
+        replayAttempts: Number(row.replay_attempts) + 1,
+      }));
+    });
   }
 
   markReplayBatchDelivered(rowIds: ReadonlyArray<number>): number {
@@ -391,88 +399,56 @@ export class SQLiteReservoir {
       : this.#config.rollingBufferWindowMs;
     const rollingCutoff = now - rollingWindowMs;
     const hardCutoff = now - this.#config.fullOutageMaxWindowMs;
-
-    const markResult = this.#db
-      .prepare(
-        `UPDATE ingress_events
-         SET replay_state = 'dead_letter'
-         WHERE replay_state IN ('pending')
-           AND (
-             monitor_ingest_at_ms <= @hard_cutoff
-             OR (
-               retry_not_before_ms IS NULL
-               AND monitor_ingest_at_ms <= @rolling_cutoff
-             )
-           )`,
-      )
-      .run({
-        hard_cutoff: toSqlBigInt(hardCutoff),
-        rolling_cutoff: toSqlBigInt(rollingCutoff),
-      });
-
-    const deleteResult = this.#db
-      .prepare(
-        `DELETE FROM ingress_events
-         WHERE replay_state IN ('delivered', 'dead_letter')
-           AND expires_at_ms <= ?`,
-      )
-      .run(toSqlBigInt(now));
-
+    const markedDeadLetter = this.#markExpiredPendingRows(
+      hardCutoff,
+      rollingCutoff,
+    );
+    const deletedRows = this.#deleteExpiredTerminalRows(now);
     return {
-      markedDeadLetter: markResult.changes,
-      deletedRows: deleteResult.changes,
+      markedDeadLetter,
+      deletedRows,
     };
   }
 
   getStats(): ReservoirStats {
-    const totalPendingRow = this.#db
-      .prepare(
-        `SELECT COUNT(*) AS count
+    const totalPendingRow = this.#prepareReadBigInts(
+      `SELECT COUNT(*) AS count
          FROM ingress_events
          WHERE replay_state IN ('pending', 'replaying')`,
-      )
-      .get() as { count?: unknown };
+    ).get() as { count?: unknown };
 
-    const oldestPendingRow = this.#db
-      .prepare(
-        `SELECT MIN(monitor_ingest_at_ms) AS oldest
+    const oldestPendingRow = this.#prepareReadBigInts(
+      `SELECT MIN(monitor_ingest_at_ms) AS oldest
          FROM ingress_events
          WHERE replay_state IN ('pending', 'replaying')`,
-      )
-      .get() as { oldest?: unknown };
+    ).get() as { oldest?: unknown };
 
-    const retryWaitingRow = this.#db
-      .prepare(
-        `SELECT
+    const retryWaitingRow = this.#prepareReadBigInts(
+      `SELECT
            COUNT(*) AS count,
            MIN(retry_not_before_ms) AS earliest_retry_at
          FROM ingress_events
          WHERE replay_state = 'pending'
            AND retry_not_before_ms IS NOT NULL
            AND retry_not_before_ms > ?`,
-      )
-      .get(toSqlBigInt(this.#now())) as {
+    ).get(toSqlBigInt(this.#now())) as {
       count?: unknown;
       earliest_retry_at?: unknown;
     };
 
-    const bySourceRows = this.#db
-      .prepare(
-        `SELECT source_path, COUNT(*) AS count
+    const bySourceRows = this.#prepareReadBigInts(
+      `SELECT source_path, COUNT(*) AS count
          FROM ingress_events
          WHERE replay_state IN ('pending', 'replaying')
          GROUP BY source_path`,
-      )
-      .all() as Array<{ source_path: MonitorSourcePath; count: unknown }>;
+    ).all() as Array<{ source_path: MonitorSourcePath; count: unknown }>;
 
-    const byDeliveryRows = this.#db
-      .prepare(
-        `SELECT delivery_mode, COUNT(*) AS count
+    const byDeliveryRows = this.#prepareReadBigInts(
+      `SELECT delivery_mode, COUNT(*) AS count
          FROM ingress_events
          WHERE replay_state IN ('pending', 'replaying')
          GROUP BY delivery_mode`,
-      )
-      .all() as Array<{ delivery_mode: MonitorDeliveryMode; count: unknown }>;
+    ).all() as Array<{ delivery_mode: MonitorDeliveryMode; count: unknown }>;
 
     const sourceCounts: ReservoirStats["pendingRowsBySourcePath"] = {
       transport_normalized_stream: 0,
@@ -521,20 +497,137 @@ export class SQLiteReservoir {
     }
 
     const placeholders = rowIds.map(() => "?").join(", ");
-    const result = this.#db
-      .prepare(
-        `UPDATE ingress_events
+    const result = this.#prepare(
+      `UPDATE ingress_events
          SET replay_state = ?,
              retry_not_before_ms = ?
          WHERE rowid IN (${placeholders})`,
-      )
-      .run(
-        nextState,
-        retryNotBeforeMs === null || retryNotBeforeMs === undefined
-          ? null
-          : toSqlBigInt(retryNotBeforeMs),
-        ...rowIds,
-      );
-    return result.changes;
+    ).run(
+      nextState,
+      retryNotBeforeMs === null || retryNotBeforeMs === undefined
+        ? null
+        : toSqlBigInt(retryNotBeforeMs),
+      ...rowIds,
+    );
+    return Number(result.changes);
+  }
+
+  #markExpiredPendingRows(
+    hardCutoff: bigint,
+    rollingCutoff: bigint,
+  ): number {
+    const pendingBatchSize = this.#config.pruneBatchSize;
+    let totalMarked = 0;
+
+    while (true) {
+      const markedThisPass = this.#withTransaction(() => {
+        const rowIds = this.#selectExpiredPendingRowIds(
+          hardCutoff,
+          rollingCutoff,
+          pendingBatchSize,
+        );
+        return this.#updateReplayRows(rowIds, "dead_letter", null);
+      });
+      if (markedThisPass === 0) {
+        return totalMarked;
+      }
+
+      totalMarked += markedThisPass;
+    }
+  }
+
+  #deleteExpiredTerminalRows(now: bigint): number {
+    const deleteBatchSize = this.#config.pruneBatchSize;
+    let totalDeleted = 0;
+
+    while (true) {
+      const deletedThisPass = this.#withTransaction(() => {
+        const rowIds = this.#selectExpiredTerminalRowIds(now, deleteBatchSize);
+        return this.#deleteRowsByIds(rowIds);
+      });
+      if (deletedThisPass === 0) {
+        return totalDeleted;
+      }
+
+      totalDeleted += deletedThisPass;
+    }
+  }
+
+  #selectExpiredPendingRowIds(
+    hardCutoff: bigint,
+    rollingCutoff: bigint,
+    limit: number,
+  ): number[] {
+    const rows = this.#prepareReadBigInts(
+      `SELECT rowid AS row_id
+         FROM ingress_events
+         WHERE replay_state = 'pending'
+           AND (
+             monitor_ingest_at_ms <= @hard_cutoff
+             OR (
+               retry_not_before_ms IS NULL
+               AND monitor_ingest_at_ms <= @rolling_cutoff
+             )
+           )
+         ORDER BY monitor_ingest_at_ms ASC, rowid ASC
+         LIMIT @limit`,
+    ).all({
+      hard_cutoff: toSqlBigInt(hardCutoff),
+      rolling_cutoff: toSqlBigInt(rollingCutoff),
+      limit,
+    }) as unknown as PruneBatchRow[];
+
+    return rows.map((row) => Number(row.row_id));
+  }
+
+  #selectExpiredTerminalRowIds(now: bigint, limit: number): number[] {
+    const rows = this.#prepareReadBigInts(
+      `SELECT rowid AS row_id
+         FROM ingress_events
+         WHERE replay_state IN ('delivered', 'dead_letter')
+           AND expires_at_ms <= @expires_at_ms
+         ORDER BY expires_at_ms ASC, rowid ASC
+         LIMIT @limit`,
+    ).all({
+      expires_at_ms: toSqlBigInt(now),
+      limit,
+    }) as unknown as PruneBatchRow[];
+
+    return rows.map((row) => Number(row.row_id));
+  }
+
+  #deleteRowsByIds(rowIds: ReadonlyArray<number>): number {
+    if (rowIds.length === 0) {
+      return 0;
+    }
+
+    const placeholders = rowIds.map(() => "?").join(", ");
+    const result = this.#prepare(
+      `DELETE FROM ingress_events
+         WHERE rowid IN (${placeholders})`,
+    ).run(...rowIds);
+    return Number(result.changes);
+  }
+
+  #prepare(sql: string): StatementSync {
+    return this.#db.prepare(sql);
+  }
+
+  #prepareReadBigInts(sql: string): StatementSync {
+    const statement = this.#db.prepare(sql);
+    statement.setReadBigInts(true);
+    return statement;
+  }
+
+  #withTransaction<T>(work: () => T): T {
+    this.#db.exec("BEGIN");
+    try {
+      const result = work();
+      this.#db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
   }
 }
