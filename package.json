@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -105,7 +105,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:export-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run pack:check",
+    "ci": "npm run check && npm run test:export-contract && npm run test:schema-compatibility && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run pack:check",
     "harness:monitor": "npm run build && node scripts/run-monitor-harness.mjs",
     "harness:order-outage": "npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 20m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-local",
     "prepack": "npm run publish:prepare && npm run build",
@@ -127,6 +127,7 @@
     "test:replay-ownership-guard": "npm run build && node scripts/replay-ownership-guard.mjs",
     "test:retention-admission-contract": "npm run build && node scripts/retention-admission-contract.mjs",
     "test:runtime-bootstrap": "npm run build && node scripts/runtime-bootstrap.mjs",
+    "test:schema-compatibility": "npm run build && node scripts/schema-compatibility.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
   },
   "peerDependencies": {

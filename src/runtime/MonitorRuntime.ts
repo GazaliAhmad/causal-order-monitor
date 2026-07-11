@@ -7,6 +7,7 @@ import { inspectMonitorSnapshot } from "../inspect/inspectMonitorSnapshot.js";
 import { DeliveryRouter } from "../routing/DeliveryRouter.js";
 import { ReplayCoordinator } from "../replay/ReplayCoordinator.js";
 import { SQLiteReservoir } from "../storage/SQLiteReservoir.js";
+import type { MonitorSchemaInfo } from "../storage/schema.js";
 import { ThrottleController } from "../throttle/ThrottleController.js";
 import type {
   MonitorComponent,
@@ -135,12 +136,13 @@ export class MonitorRuntime {
   }
 
   getSnapshot(): MonitorSnapshot {
+    const reservoir = this.getReservoirStats();
     return {
       generatedAt: this.#now(),
-      routingMode: this.#deriveRoutingMode(),
+      routingMode: this.#deriveRoutingMode(reservoir.totalPendingRows),
       throttleTier: this.#throttleTier,
       components: this.getHealthSnapshot(),
-      reservoir: this.getReservoirStats(),
+      reservoir,
       replay: this.getReplaySnapshot(),
     };
   }
@@ -157,14 +159,19 @@ export class MonitorRuntime {
     return this.#reservoir.getStats();
   }
 
+  getSchemaInfo(): Readonly<MonitorSchemaInfo> {
+    return this.#reservoir.getSchemaInfo();
+  }
+
   getReplaySnapshot(): ReplaySessionSnapshot {
     return this.#replay.getSnapshot();
   }
 
   getIngressDecision(): MonitorIngressDecision {
+    const totalPendingRows = this.#reservoir.getPendingRowCount();
     const decision = this.#router.decideIngress(
-      this.#deriveRoutingMode(),
-      this.getReservoirStats(),
+      this.#deriveRoutingMode(totalPendingRows),
+      { totalPendingRows },
     );
     const gatedDecision =
       this.#config.replay.pauseLiveFlowDuringReplay &&
@@ -493,7 +500,9 @@ export class MonitorRuntime {
     return this.#replay.claimNextBatch(limit);
   }
 
-  #deriveRoutingMode(): MonitorRoutingMode {
+  #deriveRoutingMode(
+    totalPendingRows = this.#reservoir.getPendingRowCount(),
+  ): MonitorRoutingMode {
     const components = this.#healthTracker.getSnapshot();
     const transport = components.transport.state;
     const dedupe = components.dedupe.state;
@@ -515,7 +524,7 @@ export class MonitorRuntime {
       return "dedupe_bypass_throttled";
     }
 
-    if (transport === "offline" && this.getReservoirStats().totalPendingRows > 0) {
+    if (transport === "offline" && totalPendingRows > 0) {
       return "order_buffer_only";
     }
 
@@ -568,15 +577,16 @@ export class MonitorRuntime {
   }
 
   #shouldHoldLiveFlowForRecoveryConfirmation(): boolean {
-    const reservoir = this.getReservoirStats();
+    if (
+      !this.#areReplayTargetsHealthy() ||
+      !this.#recoveryReplayNeeded ||
+      !this.#observedRecoveryTransition ||
+      this.#replay.hasRecoveryConfirmation()
+    ) {
+      return false;
+    }
 
-    return (
-      this.#areReplayTargetsHealthy() &&
-      this.#recoveryReplayNeeded &&
-      this.#observedRecoveryTransition &&
-      this.#hasReplayEligibleBacklog(reservoir) &&
-      !this.#replay.hasRecoveryConfirmation()
-    );
+    return this.#hasReplayEligibleBacklog(this.getReservoirStats());
   }
 
   #assertReplayOwnership(

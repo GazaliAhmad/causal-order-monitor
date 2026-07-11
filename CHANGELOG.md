@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.0
+
+- established SQLite schema version 1 as an explicit persistence compatibility contract
+- replaced ad-hoc legacy column upgrades with an ordered transactional migration path
+- added structural detection for compatible unversioned databases created by earlier monitor releases
+- added typed failures for newer-than-supported, incomplete, incompatible, and failed-migration schemas without flattening them into generic startup errors
+- exposed current and latest supported schema versions through `SQLiteReservoir`, `MonitorRuntime`, and the storage subpath
+- added fixture-based contracts proving new initialization, legacy row preservation, idempotent reopen, unsupported-schema rejection, and migration rollback
+- enabled WAL journaling with `synchronous=FULL` to remove rollback-journal pressure without weakening per-transaction synchronization
+- removed full operator-stat aggregation from the ingress decision hot path, initialized an exact pending-row counter from SQLite, and kept it synchronized across replay-state transitions
+- evaluated cheap recovery-health guards before constructing detailed backlog statistics, eliminating the remaining full-table aggregation during outage ingress
+- reused the prepared ingress statement instead of recompiling the same SQL for every event
+- added schema compatibility and both 10,000-row threshold/retention pressure contracts to default CI
+
 ## v0.1.3
 
 - began the first low-risk deprecation wave without removing public APIs

@@ -24,7 +24,7 @@ export class ThrottleController {
 
   decide(
     routingMode: MonitorRoutingMode,
-    reservoir: ReservoirStats,
+    reservoir: Pick<ReservoirStats, "totalPendingRows">,
   ): ThrottleDecision {
     if (routingMode === "full_outage_buffer" || routingMode === "order_buffer_only") {
       return this.#toDecision("paused", "downstream ordering path unavailable");

@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.1.3` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
+This file records the `v0.2.0` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -16,8 +16,8 @@ This file records the `v0.1.3` release baseline for `@causal-order/monitor` whil
 
 ## Current Release
 
-- Status: `v0.1.3` is the current published npm release.
-- The `v0.1.3` package preserves runtime compatibility while adding the first low-risk root-export deprecation warnings and validated subpath replacements.
+- Status: `v0.2.0` is the current published npm release.
+- The `v0.2.0` package establishes schema versioning, transactional legacy migration, typed compatibility failures, and runtime schema inspection while preserving the `v0.1.3` API migration contract.
 - The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 
 ## Package Intent
@@ -252,9 +252,19 @@ Acceptance results:
 - runtime behavior remains stable while API posture gets stricter
 - future breaking cleanup, if any, can start from a warning phase that was validated directly instead of inferred from documentation alone
 
-## Phase 2: Persistence Lifecycle and Upgrade Safety (Target: `v0.2.0`)
+## Phase 2: Persistence Lifecycle and Upgrade Safety (`v0.2.x`)
 
 Turn the monitor's SQLite format from an implementation detail into a supported upgrade contract.
+
+`v0.2.0` delivered the schema compatibility foundation:
+
+- schema version 1 is recorded and exposed independently from the package version
+- compatible unversioned databases migrate through an ordered transaction
+- newer, incomplete, unrelated, and failed-migration schemas fail without partial mutation
+- fixture-based validation preserves legacy rows and proves idempotent reopen
+- WAL journaling with full synchronization and a lightweight routing-pressure path remove the main 10,000-row ingress bottlenecks without weakening snapshot detail
+
+The remaining `v0.2.x` work covers complete restart-state recovery in `v0.2.1` and terminal-row retention, WAL lifecycle, backup, restore, and relocation in `v0.2.2`.
 
 - record and expose a reservoir schema version
 - replace ad-hoc column additions with deterministic, transactional migrations

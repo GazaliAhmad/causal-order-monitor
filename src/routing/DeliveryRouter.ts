@@ -15,7 +15,7 @@ export class DeliveryRouter {
 
   decideIngress(
     routingMode: MonitorRoutingMode,
-    reservoir: ReservoirStats,
+    reservoir: Pick<ReservoirStats, "totalPendingRows">,
   ): MonitorIngressDecision {
     const throttle = this.#throttleController.decide(routingMode, reservoir);
 

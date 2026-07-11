@@ -251,6 +251,17 @@ assertOwnExport(root, "ThrottleController", "@causal-order/monitor");
 assertOwnExport(root, "TransportMonitorAdapter", "@causal-order/monitor");
 assertOwnExport(root, "ReplayOwnershipError", "@causal-order/monitor");
 
+for (const exportName of [
+  "MONITOR_SQLITE_SCHEMA_VERSION",
+  "MonitorSchemaCompatibilityError",
+  "MonitorSchemaError",
+  "MonitorSchemaMigrationError",
+  "MonitorSchemaVersionError",
+]) {
+  assertOwnExport(storage, exportName, "@causal-order/monitor/storage");
+}
+assert.equal(storage.MONITOR_SQLITE_SCHEMA_VERSION, 1);
+
 assert.ok(
   packageJson.exports["./replay"]?.types,
   "the replay subpath should publish a types target for ReplayBatch",
