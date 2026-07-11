@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the shipped `v0.1.1` baseline for `@causal-order/monitor`.
+This file records the `v0.1.3` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -16,9 +16,9 @@ This file records the shipped `v0.1.1` baseline for `@causal-order/monitor`.
 
 ## Current Release
 
-- Status: `v0.1.1` is the current published package release.
-- The `v0.1.1` package exports a real runtime surface instead of a placeholder package shell.
-- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, and built-in `node:sqlite`.
+- Status: `v0.1.3` is the current published npm release.
+- The `v0.1.3` package preserves runtime compatibility while adding the first low-risk root-export deprecation warnings and validated subpath replacements.
+- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 
 ## Package Intent
 
@@ -180,13 +180,13 @@ Ingress HTTP semantics to preserve and document:
 
 ## `v0.1.2` API Tightening
 
-The next version should make future `/monitor` API tightening safer.
+`v0.1.2` made future `/monitor` API tightening safer.
 
-The purpose of `v0.1.2` is not to remove or broadly deprecate public APIs immediately.
+The purpose of `v0.1.2` was not to remove or broadly deprecate public APIs immediately.
 
-The purpose is to make later cleanup safe by first aligning the published surface, migration paths, and validation story.
+The purpose was to make later cleanup safe by first aligning the published surface, migration paths, and validation story.
 
-Primary goals:
+Primary goals were:
 
 - keep the stable, high-value integration path centered on `MonitorRuntime`, `TransportMonitorAdapter`, config helpers, snapshots, and inspection
 - identify which current root exports already have published subpath migration paths and which do not
@@ -194,7 +194,7 @@ Primary goals:
 - add export-contract safety so future cleanup does not break existing users abruptly
 - document a smaller preferred integration story without treating documentation cleanup alone as safe deprecation proof
 
-Planned scope:
+Shipped scope:
 
 - inventory the current published root exports and subpath exports as an explicit compatibility contract
 - add validation that proves root exports and published subpath imports resolve as intended
@@ -208,10 +208,179 @@ Planned scope:
 - decide on a published home for `createDefaultMonitorNow` before considering any future root-level deprecation
 - leave metadata-only root exports such as `monitorPackageVersion` and `monitorImplementationStatus` in compatibility status until a safe migration path or later breaking strategy is explicit
 
-Acceptance themes:
+Delivered themes:
 
 - a new user can identify the main monitor integration path without scanning internal building blocks
 - the package has an explicit export-compatibility story instead of relying on assumptions about which APIs are safe to move
 - advanced and low-level APIs are still available where needed, but are clearly labeled as such
 - future deprecations can point to real published migration targets instead of only documentation guidance
 - future internal refactors carry less semver risk because export resolution and compatibility are validated directly
+
+## Phase 1 Complete: `v0.1.3` First-wave Low-risk Deprecations
+
+`v0.1.3` completes the safest first wave of API tightening without breaking current consumers.
+
+The purpose of `v0.1.3` is not removal.
+
+The published release established the warning phase only for root exports that already have a published migration path.
+
+Delivered goals:
+
+- start with a narrow first-wave deprecation list that is easy to explain and low-risk to reverse if needed
+- preserve root import compatibility while encouraging migration to official subpaths
+- keep the main package story centered on `MonitorRuntime`, `TransportMonitorAdapter`, config helpers, snapshots, and inspection
+- add validation that proves deprecated root imports and their replacement subpaths coexist safely during the compatibility window
+
+Shipped scope:
+
+- add root `@deprecated` markers only for low-risk advanced coordinator-style exports that already have published subpath homes
+- begin with:
+  - `HealthTracker` via `@causal-order/monitor/health`
+  - `ReplayCoordinator` and `ReplayBatch` via `@causal-order/monitor/replay`
+  - `DeliveryRouter` via `@causal-order/monitor/routing`
+  - `ThrottleController` via `@causal-order/monitor/throttle`
+- keep `SQLiteReservoir` and `ReservoirReplayEntry` public and non-deprecated for now because they remain more plausibly useful directly for tooling/tests
+- keep `monitorPackageVersion` and `monitorImplementationStatus` out of the first deprecation wave because they still do not have a real published destination
+- keep harness metadata exports and `createDefaultMonitorNow` compatible and documented as secondary/specialist surfaces instead of widening the first warning wave unnecessarily
+- add README migration examples showing root import to subpath import replacements for the first-wave exports
+- extend export-contract validation so deprecated root imports and replacement subpaths are both proven to resolve
+
+Acceptance results:
+
+- the first deprecation wave is narrow, non-breaking, and based on real published migration targets
+- users can see the preferred subpath replacement immediately without losing working root imports
+- runtime behavior remains stable while API posture gets stricter
+- future breaking cleanup, if any, can start from a warning phase that was validated directly instead of inferred from documentation alone
+
+## Phase 2: Persistence Lifecycle and Upgrade Safety (Target: `v0.2.0`)
+
+Turn the monitor's SQLite format from an implementation detail into a supported upgrade contract.
+
+- record and expose a reservoir schema version
+- replace ad-hoc column additions with deterministic, transactional migrations
+- define behavior for older, newer, incomplete, and incompatible database schemas
+- prove restart recovery for `pending`, `replaying`, `delivered`, retry-waiting, and `dead_letter` rows
+- define bounded retention for delivered and dead-letter evidence, WAL checkpoint behavior, and long-running database growth
+- document backup, restore, relocation, migration failure recovery, and local-filesystem requirements
+
+Exit criteria:
+
+- every supported schema upgrade is exercised against a real pre-upgrade database fixture
+- interrupted migration or startup cannot silently discard or strand accepted events
+- operators can identify the active schema version and follow a documented recovery procedure
+
+## Phase 3: Crash, Storage, and Concurrency Hardening (Target: `v0.3.0`)
+
+Prove deterministic behavior at the failure boundaries most likely to damage recovery confidence.
+
+- exercise process termination and restart during append, replay claim, acknowledgement, retry, reclaim, and prune operations
+- validate busy/locked databases, disk-full behavior, read-only paths, WAL failures, corrupt files, and actionable startup errors
+- stress concurrent ingress, health updates, replay, inspection, pruning, and shutdown
+- specify payload serialization failures, size expectations, unsupported values, and sensitive-data responsibilities
+- make `close()` behavior idempotent and define calls made after shutdown
+
+Exit criteria:
+
+- accepted rows retain a documented terminal outcome across every tested crash point
+- replay ownership and ordering invariants hold under concurrent pressure
+- storage failures produce explicit boundary results or typed errors rather than ambiguous partial success
+
+## Phase 4: Versioned Operator Contract (Target: `v0.4.0`)
+
+Stabilize the inspection model as a machine-consumable operational API.
+
+- version the inspected snapshot schema and keep it JSON-safe
+- expose deterministic overall status, affected components, backlog age, replay progress, storage pressure, and recommended action
+- distinguish contained buffering (`202`) from protective refusal (`503`) without requiring callers to infer posture from raw counters
+- guarantee bounded snapshot query cost with indexed aggregation and regression benchmarks
+- add operator runbooks for outage, retry wait, terminal replay failure, storage pressure, and recovery
+
+Exit criteria:
+
+- all operational states map to stable status and action semantics
+- snapshot generation uses a bounded number of indexed database reads
+- compatibility tests protect the versioned snapshot contract
+
+## Phase 5: Stack Integration and Artifact Contracts (Target: `v0.5.0`)
+
+Validate the monitor as the recovery layer for the real causal-order package stack, not only as a repository-local library.
+
+- install the packed monitor tarball into clean ESM TypeScript consumers
+- validate every documented root and subpath import from the packed artifact
+- run compatibility suites against supported `@causal-order/transport`, `@causal-order/dedupe`, `causal-order`, and `@causal-order/testing` versions
+- preserve replay-through-dedupe, replay ownership, and `202`/`503` contracts at the transport boundary
+- publish a complete reference integration covering healthy delivery, degradation, outage buffering, restart, recovery, and replay
+
+Exit criteria:
+
+- CI tests the same npm artifact consumers install
+- the supported peer-version matrix is explicit and continuously exercised
+- the reference integration completes the full failure and recovery lifecycle without repository source imports
+
+## Phase 6: Performance and Soak Qualification (Target: `v0.6.0`)
+
+- establish repeatable ingress, replay, prune, startup, and inspection benchmarks
+- run long-duration healthy-flow, extended-outage, reconnect-burst, and repeated-recovery soak contracts
+- define bounded expectations for memory, file descriptors, database/WAL growth, retry activity, and shutdown duration
+- test representative 8-node workloads and publish limits as measured operating envelopes, not universal throughput claims
+- retain reproducible validation summaries and environment metadata with release evidence
+
+Exit criteria:
+
+- no unexplained resource growth remains across the supported soak scenarios
+- performance regressions are detectable from repeatable baselines
+- documented sizing guidance connects ingress rate, outage duration, disk capacity, and replay rate
+
+## Phase 7: API Convergence and Compatibility Policy (Target: `v0.7.0`)
+
+- audit every root export, subpath, adapter result, configuration field, snapshot field, routing mode, reason code, and error type
+- define semantic-versioning rules for TypeScript types, config defaults, peer dependencies, subpaths, snapshots, and the SQLite schema
+- complete supported deprecation windows and remove only APIs whose migration path has been released and validated
+- normalize lifecycle, error, and boundary-result semantics before freezing the surface
+- require compatibility review for new public API after this phase
+
+Exit criteria:
+
+- no known public-surface redesign is deferred to `v1.0.0`
+- all removals have tested migration guidance
+- the intended `v1` root and subpath surfaces are explicit contract fixtures
+
+## Phase 8: Platform and Operations Readiness (Target: `v0.8.0`)
+
+- declare the supported Node.js and operating-system matrix
+- run packed-artifact tests across the supported platform matrix
+- complete deployment, storage, upgrade, troubleshooting, and incident-response documentation
+- verify npm provenance, package contents, licenses, peer dependency guidance, and reproducible release checks
+- conduct a security and data-handling review of persisted payloads and operator evidence
+
+Exit criteria:
+
+- a new operator can deploy, inspect, upgrade, back up, restore, and troubleshoot the monitor from published documentation
+- release automation rejects incomplete or mismatched package metadata
+- supported platforms pass the same core recovery contracts
+
+## Phase 9: Release Candidate Burn-in (Target: `v0.9.0`)
+
+- freeze avoidable feature work and treat the public API and schema as release candidates
+- exercise fresh install, upgrade from every supported schema, crash recovery, prolonged outage, and downgrade-rejection paths
+- run the reference stack under external-consumer conditions using only published-style package artifacts
+- resolve all critical correctness, ordering, replay, migration, data-loss, and operational defects
+- publish a `v1.0.0` migration and readiness checklist
+
+Exit criteria:
+
+- the release candidate completes the full validation matrix without unresolved critical defects
+- no breaking public API or persistence redesign is planned for `v1.0.0`
+- release evidence is reproducible from documented commands
+
+## Version 1.0: Stable Causal-order Recovery Contract (Target: `v1.0.0`)
+
+Publish `v1.0.0` only when the monitor can make a durable compatibility and recovery promise to production consumers.
+
+- Phases 1 through 9 are complete and their required suites run in CI
+- the public API, subpaths, configuration, operator snapshot, routing/reason codes, and error model are stable
+- the SQLite schema is versioned, supported migrations are transactional, and restart/crash recovery is proven
+- replay always follows the documented dedupe path and preserves ownership, gating, retry, and ordering invariants
+- supported stack versions and platforms pass packed-artifact integration, failure, upgrade, and soak validation
+- production documentation and migration guidance are complete
+- no unresolved critical correctness, ordering, data-loss, or recovery issue remains
