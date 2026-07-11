@@ -22,7 +22,7 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-Published version: `v0.1.3`.
+Published version: `v0.2.0`.
 
 ## When To Use It
 
@@ -215,6 +215,21 @@ In practical terms:
 - older unacknowledged rows age out when pruning runs and are marked `dead_letter` once they pass the hard cutoff
 
 So the current behavior is closer to “drop older buffered rows once they age past the ceiling” than “reject every new ingress immediately at the ceiling.”
+
+## Schema Compatibility
+
+`v0.2.0` establishes SQLite schema version 1 as an explicit persistence contract.
+
+- new reservoirs record their schema version during transactional initialization
+- compatible unversioned databases created by earlier monitor releases migrate transactionally without discarding rows
+- current databases reopen without schema mutation
+- newer, incomplete, and incompatible schemas fail before mutation with typed errors
+- `SQLiteReservoir.getSchemaInfo()` and `MonitorRuntime.getSchemaInfo()` expose the current and latest supported schema versions
+- file-backed reservoirs use WAL journaling with `synchronous=FULL` for higher write concurrency without reducing transaction synchronization
+
+Schema constants, information types, and compatibility errors are available through `@causal-order/monitor/storage`.
+
+Package and schema versions are independent: a package update does not imply a database migration unless the schema version changes.
 
 ## Configuration
 
@@ -466,7 +481,7 @@ Compatibility-only metadata surfaces:
 - `monitorPackageVersion`
 - `monitorImplementationStatus`
 
-These remain part of the `v0.1.3` public package surface, but they are secondary to the main runtime and adapter integration paths.
+These remain part of the `v0.2.0` public compatibility contract and continue to follow the package's semantic-versioning guarantees.
 
 ## Node Support
 

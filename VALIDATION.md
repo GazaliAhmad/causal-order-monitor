@@ -10,6 +10,8 @@ Run the complete CI contract:
 npm run ci
 ```
 
+The default CI contract includes both 10,000-row threshold and retention/admission pressure scenarios so backlog-dependent ingress regressions remain release-blocking.
+
 Individual checks are available through:
 
 - `npm run check`
@@ -23,14 +25,29 @@ Individual checks are available through:
 - `npm run test:replay-ownership-guard`
 - `npm run test:retention-admission-contract`
 - `npm run test:runtime-bootstrap`
+- `npm run test:schema-compatibility`
 - `npm run test:replay-safety`
 
 ## Operational Harness
 
-Run a local order-outage scenario with:
+Run the default three-node, 10-minute order-outage scenario at 60x speed with:
 
 ```bash
 npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 10m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-10m-fast
+```
+
+Run the 8-node smoke suite with a 10-minute duration per scenario at 60x speed with:
+
+```bash
+npm run test:monitor-operational-smoke -- --duration 10m --time-scale 60
+```
+
+The smoke suite uses `edge-a` through `edge-h` and covers healthy rolling-buffer, order-outage, and dual-outage scenarios.
+
+Run only the 8-node, 10-minute order-outage scenario with:
+
+```bash
+npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 10m --time-scale 60 --profile monitor-order-outage --node-ids edge-a,edge-b,edge-c,edge-d,edge-e,edge-f,edge-g,edge-h --run-name monitor-order-outage-10m-8nodes
 ```
 
 The operational suites are:

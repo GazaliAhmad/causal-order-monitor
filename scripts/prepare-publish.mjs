@@ -25,6 +25,10 @@ const replacements = [
         /Status: `v[^`]+` published to npm\./,
         `Status: \`v${version}\` published to npm.`,
       );
+      next = next.replace(
+        /Published version: `v[^`]+`\./,
+        `Published version: \`v${version}\`.`,
+      );
       next = next.replace(/## Version `v[^`]+`/, `## Version \`v${version}\``);
       return next;
     },

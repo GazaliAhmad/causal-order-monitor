@@ -13,7 +13,11 @@ import type {
   ReplaySessionSnapshot,
   ReservoirStats,
 } from "../types/snapshots.js";
-import { applyMonitorSchema } from "./schema.js";
+import {
+  applyMonitorSchema,
+  MonitorSchemaError,
+  type MonitorSchemaInfo,
+} from "./schema.js";
 
 interface ReservoirIngressOptions {
   sourcePath: MonitorSourcePath;
@@ -50,6 +54,44 @@ interface PruneBatchRow {
 }
 
 const BIGINT_SENTINEL = "__monitorBigInt";
+
+const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
+  id,
+  monitor_ingest_at_ms,
+  source_node_id,
+  source_stream_id,
+  source_path,
+  event_id,
+  trace_id,
+  sequence,
+  logical_time_ms,
+  payload_json,
+  payload_encoding,
+  delivery_mode,
+  replay_state,
+  replay_attempts,
+  retry_not_before_ms,
+  replay_claimed_at_ms,
+  expires_at_ms
+) VALUES (
+  @id,
+  @monitor_ingest_at_ms,
+  @source_node_id,
+  @source_stream_id,
+  @source_path,
+  @event_id,
+  @trace_id,
+  @sequence,
+  @logical_time_ms,
+  @payload_json,
+  @payload_encoding,
+  @delivery_mode,
+  @replay_state,
+  @replay_attempts,
+  @retry_not_before_ms,
+  @replay_claimed_at_ms,
+  @expires_at_ms
+)`;
 
 function normalizeDatabasePath(databasePath: string): string {
   return databasePath === ":memory:" ? databasePath : resolve(databasePath);
@@ -130,21 +172,42 @@ export class SQLiteReservoir {
   readonly #config: MonitorReservoirConfig;
   readonly #now: () => bigint;
   readonly #db: DatabaseSync;
+  readonly #schemaInfo: MonitorSchemaInfo;
+  readonly #appendIngressStatement: StatementSync;
+  #pendingRowCount: number;
 
   constructor(config: MonitorReservoirConfig, now: () => bigint) {
     this.#config = config;
     this.#now = now;
+    let db: DatabaseSync | undefined;
     try {
       if (config.databasePath !== ":memory:") {
         mkdirSync(dirname(normalizeDatabasePath(config.databasePath)), {
           recursive: true,
         });
       }
-      this.#db = new DatabaseSync(config.databasePath);
-      applyMonitorSchema(this.#db);
+      db = new DatabaseSync(config.databasePath);
+      this.#db = db;
+      this.#schemaInfo = applyMonitorSchema(db, config.databasePath);
+      db.exec("PRAGMA journal_mode = WAL");
+      db.exec("PRAGMA synchronous = FULL");
+      this.#appendIngressStatement = db.prepare(INSERT_INGRESS_EVENT_SQL);
+      this.#pendingRowCount = this.#readPendingRowCount();
     } catch (error) {
+      try {
+        db?.close();
+      } catch {
+        // Preserve the startup failure that prevented reservoir initialization.
+      }
+      if (error instanceof MonitorSchemaError) {
+        throw error;
+      }
       throw toReservoirStartupError(config.databasePath, error);
     }
+  }
+
+  getSchemaInfo(): Readonly<MonitorSchemaInfo> {
+    return { ...this.#schemaInfo };
   }
 
   appendIngressEvent(
@@ -160,45 +223,7 @@ export class SQLiteReservoir {
       options.replayState ??
       (options.sourcePath === "deduped_observation" ? "delivered" : "pending");
 
-    const result = this.#prepare(
-      `INSERT INTO ingress_events (
-          id,
-          monitor_ingest_at_ms,
-          source_node_id,
-          source_stream_id,
-          source_path,
-          event_id,
-          trace_id,
-          sequence,
-          logical_time_ms,
-          payload_json,
-          payload_encoding,
-          delivery_mode,
-          replay_state,
-          replay_attempts,
-          retry_not_before_ms,
-          replay_claimed_at_ms,
-          expires_at_ms
-        ) VALUES (
-          @id,
-          @monitor_ingest_at_ms,
-          @source_node_id,
-          @source_stream_id,
-          @source_path,
-          @event_id,
-          @trace_id,
-          @sequence,
-          @logical_time_ms,
-          @payload_json,
-          @payload_encoding,
-          @delivery_mode,
-          @replay_state,
-          @replay_attempts,
-          @retry_not_before_ms,
-          @replay_claimed_at_ms,
-          @expires_at_ms
-        )`,
-    ).run({
+    const result = this.#appendIngressStatement.run({
       id: event.id,
       monitor_ingest_at_ms: toSqlBigInt(monitorIngestAt),
       source_node_id: event.nodeId,
@@ -220,6 +245,10 @@ export class SQLiteReservoir {
       replay_claimed_at_ms: null,
       expires_at_ms: toSqlBigInt(expiresAt),
     });
+
+    if (replayState === "pending" || replayState === "replaying") {
+      this.#pendingRowCount += 1;
+    }
 
     return Number(result.lastInsertRowid);
   }
@@ -317,7 +346,11 @@ export class SQLiteReservoir {
          SET replay_state = ?
          WHERE replay_state IN (${placeholders})`,
     ).run(nextState, ...fromStates);
-    return Number(result.changes);
+    const changedRows = Number(result.changes);
+    if (changedRows > 0) {
+      this.#pendingRowCount = this.#readPendingRowCount();
+    }
+    return changedRows;
   }
 
   claimReplayBatch(
@@ -437,11 +470,7 @@ export class SQLiteReservoir {
   }
 
   getStats(): ReservoirStats {
-    const totalPendingRow = this.#prepareReadBigInts(
-      `SELECT COUNT(*) AS count
-         FROM ingress_events
-         WHERE replay_state IN ('pending', 'replaying')`,
-    ).get() as { count?: unknown };
+    const totalPendingRows = this.getPendingRowCount();
 
     const oldestPendingRow = this.#prepareReadBigInts(
       `SELECT MIN(monitor_ingest_at_ms) AS oldest
@@ -496,13 +525,26 @@ export class SQLiteReservoir {
     const earliestRetryAtRaw = parseBigInt(retryWaitingRow.earliest_retry_at);
 
     return {
-      totalPendingRows: parseCount(totalPendingRow.count),
+      totalPendingRows,
       oldestPendingAgeMs,
       retryWaitingRows: parseCount(retryWaitingRow.count),
       earliestRetryAt: earliestRetryAtRaw === 0n ? null : earliestRetryAtRaw,
       pendingRowsBySourcePath: sourceCounts,
       pendingRowsByDeliveryMode: deliveryCounts,
     };
+  }
+
+  getPendingRowCount(): number {
+    return this.#pendingRowCount;
+  }
+
+  #readPendingRowCount(): number {
+    const row = this.#prepareReadBigInts(
+      `SELECT COUNT(*) AS count
+         FROM ingress_events
+         WHERE replay_state IN ('pending', 'replaying')`,
+    ).get() as { count?: unknown };
+    return parseCount(row.count);
   }
 
   getDatabasePath(): string {
@@ -536,7 +578,11 @@ export class SQLiteReservoir {
         : toSqlBigInt(retryNotBeforeMs),
       ...rowIds,
     );
-    return Number(result.changes);
+    const changedRows = Number(result.changes);
+    if (changedRows > 0) {
+      this.#pendingRowCount = this.#readPendingRowCount();
+    }
+    return changedRows;
   }
 
   #markExpiredPendingRows(
@@ -673,6 +719,7 @@ export class SQLiteReservoir {
       return result;
     } catch (error) {
       this.#db.exec("ROLLBACK");
+      this.#pendingRowCount = this.#readPendingRowCount();
       throw error;
     }
   }
