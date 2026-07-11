@@ -22,19 +22,7 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-Published version: `v0.1.2`.
-
-This release includes:
-
-- built-in `node:sqlite` instead of `better-sqlite3`
-- first-class JSON config loading
-- `CAUSAL_ORDER_MONITOR_CONFIG` support
-- convenience runtime and adapter bootstrapping from file or environment config
-- typed replay ownership failures and stricter replay recovery gating
-- deterministic 8-node threshold validation for `4h`, `6h`, `202`, and `503` behavior
-- monotonic-backed wall-clock timing inside the default runtime
-- batched SQLite prune enforcement with `reservoir.pruneBatchSize`
-- tracked validation records for the 8-node overnight dual-outage wall-clock run
+Published version: `v0.1.3`.
 
 ## When To Use It
 
@@ -63,49 +51,44 @@ These are now enforced as separate replay-orchestration styles on the same runti
 
 If a runtime is adapter-managed, direct manual replay commands on that runtime now fail fast with `ReplayOwnershipError` instead of allowing mixed control ownership.
 
-Advanced and specialist exports also exist, but they are not the main package entrypoint story:
-
-- `HealthTracker`
-- `DeliveryRouter`
-- `ThrottleController`
-- `ReplayCoordinator`
-- `SQLiteReservoir`
-- `inspectMonitorSnapshot()`
-
-Testing-oriented metadata also exists for harness integration, but it is a secondary surface rather than the normal runtime path.
+Advanced, inspection, and testing surfaces are documented in the sections below; they are secondary to the normal runtime and adapter paths.
 
 ## Subpath Imports
 
-The package now exposes official subpath entrypoints so consumers can import narrower surfaces instead of always pulling from the root package:
+The package exposes these official subpath entrypoints:
 
-- `@causal-order/monitor/config`
-- `@causal-order/monitor/health`
-- `@causal-order/monitor/inspect`
-- `@causal-order/monitor/replay`
-- `@causal-order/monitor/routing`
-- `@causal-order/monitor/runtime`
-- `@causal-order/monitor/storage`
-- `@causal-order/monitor/testing`
-- `@causal-order/monitor/throttle`
-- `@causal-order/monitor/transport`
-- `@causal-order/monitor/types`
+| Subpath | Purpose |
+| --- | --- |
+| `@causal-order/monitor/config` | Configuration loading and helpers; lightweight entrypoint. |
+| `@causal-order/monitor/health` | Health tracking; lightweight entrypoint. |
+| `@causal-order/monitor/inspect` | Snapshot inspection; lightweight entrypoint. |
+| `@causal-order/monitor/replay` | Replay coordination contracts. |
+| `@causal-order/monitor/routing` | Delivery routing; lightweight entrypoint. |
+| `@causal-order/monitor/runtime` | Lower-level manual runtime integration. |
+| `@causal-order/monitor/storage` | SQLite reservoir primitives. |
+| `@causal-order/monitor/testing` | Harness metadata; lightweight entrypoint. |
+| `@causal-order/monitor/throttle` | Throttle decisions; lightweight entrypoint. |
+| `@causal-order/monitor/transport` | Preferred higher-level adapter integration. |
+| `@causal-order/monitor/types` | TypeScript contracts; lightweight entrypoint. |
 
-Recommended subpath choices:
+## Root Migration Notes
 
-- `@causal-order/monitor/transport` when you want the preferred higher-level integration path
-- `@causal-order/monitor/runtime` when you want the lower-level/manual runtime path
-- `@causal-order/monitor/config` when you only need config loading and config-related helpers
-- `@causal-order/monitor/testing` when you only need harness metadata exports
+In `v0.1.3`, selected advanced root exports are deprecated but remain available for compatibility. Their supported replacement is the corresponding published subpath.
 
-Lightweight analyzer-friendly entrypoints are:
+This is a non-breaking migration path: existing root imports still work.
 
-- `@causal-order/monitor/config`
-- `@causal-order/monitor/health`
-- `@causal-order/monitor/inspect`
-- `@causal-order/monitor/routing`
-- `@causal-order/monitor/testing`
-- `@causal-order/monitor/throttle`
-- `@causal-order/monitor/types`
+`v0.1.3` root-to-subpath migrations:
+
+- `HealthTracker`: `@causal-order/monitor` -> `@causal-order/monitor/health`
+- `ReplayCoordinator` and `ReplayBatch`: `@causal-order/monitor` -> `@causal-order/monitor/replay`
+- `DeliveryRouter`: `@causal-order/monitor` -> `@causal-order/monitor/routing`
+- `ThrottleController`: `@causal-order/monitor` -> `@causal-order/monitor/throttle`
+
+Example:
+
+```ts
+import { ReplayCoordinator } from "@causal-order/monitor/replay";
+```
 
 ## Quick Start
 
@@ -466,14 +449,10 @@ Key exported types include:
 
 ## Advanced And Testing Surfaces
 
-The package also publishes some specialist surfaces that are real and supported, but secondary to the main runtime and adapter path.
+The package also publishes specialist surfaces that are supported but secondary to the main runtime and adapter path. Deprecated advanced root exports and their replacements are listed once under Root Migration Notes.
 
-Advanced/runtime-building surfaces:
+Non-deprecated advanced runtime-building surface:
 
-- `HealthTracker`
-- `DeliveryRouter`
-- `ThrottleController`
-- `ReplayCoordinator`
 - `SQLiteReservoir`
 
 Testing-oriented surfaces:
@@ -487,61 +466,18 @@ Compatibility-only metadata surfaces:
 - `monitorPackageVersion`
 - `monitorImplementationStatus`
 
-These are part of the public package surface today, but they are not the mainline integration story most consumers should start with.
-
-## Version `v0.1.2`
-
-The published release includes:
-
-- explicit subpath export coverage, including `@causal-order/monitor/testing`
-- a published `@causal-order/monitor/config` home for `createDefaultMonitorNow`
-- typed replay ownership failures through `ReplayOwnershipError`
-- pre-replay recovery confirmation so brief reconnect jitter does not immediately reopen live flow into replay
-- replay retry/backoff and confirmation states surfaced more clearly through inspected snapshots
-- stale replay-claim recovery so abandoned `replaying` rows can be reclaimed safely
+These remain part of the `v0.1.3` public package surface, but they are secondary to the main runtime and adapter integration paths.
 
 ## Node Support
 
 - Node.js `>=22.13.0`
 - ESM package output
 
-## Validation
+## Release And Repository Documentation
 
-This package is validated in-repo with:
-
-- `npm run check`
-- `npm run test:config-env-resolution`
-- `npm run test:export-contract`
-- `npm run test:http-thresholds-8nodes`
-- `npm run test:inspect-snapshot`
-- `npm run test:monitor-operational-smoke`
-- `npm run test:monotonic-now`
-- `npm run test:no-healthy-replay`
-- `npm run test:monitor-operational-full`
-- `npm run test:prune-batching`
-- `npm run test:replay-ownership-guard`
-- `npm run test:retention-admission-contract`
-- `npm run test:runtime-bootstrap`
-- `npm run test:replay-safety`
-- `npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 10m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-10m-fast`
-
-The `test:http-thresholds-8nodes` validation is a deterministic 8-node wall-clock simulation that proves:
-
-- order-only outage still returns monitor decisions equivalent to HTTP `202 Accepted` after the `4h` rolling window, while prune ages out old buffered rows
-- dual outage still returns monitor decisions equivalent to HTTP `202 Accepted` after the `6h` ceiling, with dead-lettering happening during prune rather than immediate ingress rejection
-- true monitor protective-stop behavior maps to HTTP `503 Service Unavailable` when dedupe-only bypass pressure crosses the hard backlog threshold
-
-The operational harness suites are:
-
-- `npm run test:monitor-operational-smoke`
-  Uses an 8-node default topology and a short scenario subset intended for CI and repeatable smoke confidence.
-- `npm run test:monitor-operational-full`
-  Uses an 8-node default topology and the broader monitor scenario set for production-shaped validation runs.
-
-Tracked release-facing validation records for the overnight 8-node wall-clock dual-outage run are in `validation/`:
-
-- [monitor-dual-outage-8h-wallclock-8nodes.json](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/validation/monitor-dual-outage-8h-wallclock-8nodes.json)
-- [monitor-dual-outage-8h-wallclock-8nodes.md](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/validation/monitor-dual-outage-8h-wallclock-8nodes.md)
+- [Release history](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/CHANGELOG.md)
+- [Roadmap](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/ROADMAP.md)
+- [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
 
 ## License
 

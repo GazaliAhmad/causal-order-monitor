@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
@@ -58,9 +58,51 @@ const rootOnlyExports = [
   "monitorHarnessScenarios",
 ];
 
+const firstWaveDeprecatedRootValueExports = [
+  {
+    exportName: "HealthTracker",
+    subpathModule: health,
+    subpathLabel: "@causal-order/monitor/health",
+  },
+  {
+    exportName: "ReplayCoordinator",
+    subpathModule: replay,
+    subpathLabel: "@causal-order/monitor/replay",
+  },
+  {
+    exportName: "DeliveryRouter",
+    subpathModule: routing,
+    subpathLabel: "@causal-order/monitor/routing",
+  },
+  {
+    exportName: "ThrottleController",
+    subpathModule: throttle,
+    subpathLabel: "@causal-order/monitor/throttle",
+  },
+];
+
 for (const exportName of rootOnlyExports) {
   assertOwnExport(root, exportName, "@causal-order/monitor");
 }
+
+for (const { exportName, subpathModule, subpathLabel } of firstWaveDeprecatedRootValueExports) {
+  assertOwnExport(root, exportName, "@causal-order/monitor");
+  assertOwnExport(subpathModule, exportName, subpathLabel);
+}
+
+const rootDts = readFileSync(resolve(".build/src/index.d.ts"), "utf8");
+const replayDts = readFileSync(resolve(".build/src/replay.d.ts"), "utf8");
+
+assert.match(
+  rootDts,
+  /export type ReplayBatch = ReplayBatchType;/,
+  "the root declaration surface should keep exporting the deprecated ReplayBatch type alias during the compatibility window",
+);
+assert.match(
+  replayDts,
+  /export \{ ReplayCoordinator, type ReplayBatch \}/,
+  "the replay subpath declaration surface should keep exporting ReplayBatch as the replacement type path",
+);
 
 const rootAndSubpathChecks = [
   {
@@ -124,24 +166,6 @@ const rootAndSubpathChecks = [
     subpathLabel: "@causal-order/monitor/inspect",
   },
   {
-    exportName: "HealthTracker",
-    rootModule: root,
-    subpathModule: health,
-    subpathLabel: "@causal-order/monitor/health",
-  },
-  {
-    exportName: "ReplayCoordinator",
-    rootModule: root,
-    subpathModule: replay,
-    subpathLabel: "@causal-order/monitor/replay",
-  },
-  {
-    exportName: "DeliveryRouter",
-    rootModule: root,
-    subpathModule: routing,
-    subpathLabel: "@causal-order/monitor/routing",
-  },
-  {
     exportName: "createMonitorRuntime",
     rootModule: root,
     subpathModule: runtime,
@@ -196,12 +220,6 @@ const rootAndSubpathChecks = [
     subpathLabel: "@causal-order/monitor/transport",
   },
   {
-    exportName: "ThrottleController",
-    rootModule: root,
-    subpathModule: throttle,
-    subpathLabel: "@causal-order/monitor/throttle",
-  },
-  {
     exportName: "monitorHarnessArtifacts",
     rootModule: root,
     subpathModule: testing,
@@ -225,8 +243,11 @@ assert.equal(typeof root.monitorImplementationStatus, "string");
 assert.equal(typeof root.createDefaultMonitorNow, "function");
 assert.equal(typeof root.monitorHarnessArtifacts[Symbol.iterator], "function");
 assert.equal(typeof root.monitorHarnessScenarios[Symbol.iterator], "function");
+assertOwnExport(root, "HealthTracker", "@causal-order/monitor");
 assertOwnExport(root, "ReplayCoordinator", "@causal-order/monitor");
+assertOwnExport(root, "DeliveryRouter", "@causal-order/monitor");
 assertOwnExport(root, "SQLiteReservoir", "@causal-order/monitor");
+assertOwnExport(root, "ThrottleController", "@causal-order/monitor");
 assertOwnExport(root, "TransportMonitorAdapter", "@causal-order/monitor");
 assertOwnExport(root, "ReplayOwnershipError", "@causal-order/monitor");
 
@@ -257,5 +278,5 @@ assert.ok(
 );
 
 console.log(
-  "export contract passed: root-only exports, published subpaths, and packaged import/types targets all resolve as expected",
+  "export contract passed: root-only exports, first-wave deprecated root exports, published subpaths, and packaged import/types targets all resolve as expected",
 );

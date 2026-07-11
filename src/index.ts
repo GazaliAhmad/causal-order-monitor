@@ -1,9 +1,17 @@
-export const monitorPackageVersion = "0.1.2";
+export const monitorPackageVersion = "0.1.3";
 
 export type MonitorImplementationStatus = "replay_operational";
 
 export const monitorImplementationStatus: MonitorImplementationStatus =
   "replay_operational";
+
+import { HealthTracker as HealthTrackerImpl } from "./health/HealthTracker.js";
+import {
+  ReplayCoordinator as ReplayCoordinatorImpl,
+  type ReplayBatch as ReplayBatchType,
+} from "./replay/ReplayCoordinator.js";
+import { DeliveryRouter as DeliveryRouterImpl } from "./routing/DeliveryRouter.js";
+import { ThrottleController as ThrottleControllerImpl } from "./throttle/ThrottleController.js";
 
 export {
   createDefaultMonitorNow,
@@ -63,9 +71,6 @@ export {
   type ReservoirStats,
 } from "./types/snapshots.js";
 export { inspectMonitorSnapshot } from "./inspect/inspectMonitorSnapshot.js";
-export { HealthTracker } from "./health/HealthTracker.js";
-export { ReplayCoordinator, type ReplayBatch } from "./replay/ReplayCoordinator.js";
-export { DeliveryRouter } from "./routing/DeliveryRouter.js";
 export {
   createMonitorRuntime,
   createMonitorRuntimeFromEnvironment,
@@ -95,4 +100,18 @@ export {
   type MonitorHarnessScenarioDefinition,
   type MonitorHarnessScenarioId,
 } from "./testing/monitorHarness.js";
-export { ThrottleController } from "./throttle/ThrottleController.js";
+
+/** @deprecated Import `HealthTracker` from `@causal-order/monitor/health` instead. */
+export const HealthTracker = HealthTrackerImpl;
+
+/** @deprecated Import `ReplayCoordinator` from `@causal-order/monitor/replay` instead. */
+export const ReplayCoordinator = ReplayCoordinatorImpl;
+
+/** @deprecated Import `ReplayBatch` from `@causal-order/monitor/replay` instead. */
+export type ReplayBatch = ReplayBatchType;
+
+/** @deprecated Import `DeliveryRouter` from `@causal-order/monitor/routing` instead. */
+export const DeliveryRouter = DeliveryRouterImpl;
+
+/** @deprecated Import `ThrottleController` from `@causal-order/monitor/throttle` instead. */
+export const ThrottleController = ThrottleControllerImpl;

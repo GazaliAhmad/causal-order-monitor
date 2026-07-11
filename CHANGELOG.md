@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.3
+
+- began the first low-risk deprecation wave without removing public APIs
+- marked the root `HealthTracker`, `ReplayCoordinator`, `ReplayBatch`, `DeliveryRouter`, and `ThrottleController` exports as deprecated in favor of their published subpath imports
+- kept the deprecated root imports working so the warning phase remains compatibility-safe
+- extended export-contract validation to prove deprecated root exports and replacement subpath exports coexist correctly during the compatibility window
+- added README migration guidance showing the non-breaking root-to-subpath path for the first-wave deprecated exports
+- kept `SQLiteReservoir`, `ReservoirReplayEntry`, `monitorPackageVersion`, `monitorImplementationStatus`, harness metadata exports, and `createDefaultMonitorNow` out of the first wave
+- expanded the GitHub Actions CI matrix from Node.js 22 alone to Node.js 22 and 24
+- refocused the README on npm consumers, consolidated repeated API/subpath guidance, and moved repository test procedures and release evidence into `VALIDATION.md`
+- aligned the roadmap and package documentation with the published, non-breaking `v0.1.3` release
+
 ## v0.1.2
 
 - treated `v0.1.2` as a safer API-tightening preparation release instead of an aggressive root-surface deprecation pass
