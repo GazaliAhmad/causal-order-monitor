@@ -49,6 +49,14 @@ interface PruneResult {
   deletedRows: number;
 }
 
+export interface ReservoirRestartState {
+  totalPendingRows: number;
+  retryWaitingRows: number;
+  earliestRetryAt: bigint | null;
+  maximumReplayAttempts: number;
+  reclaimedInterruptedRows: number;
+}
+
 interface PruneBatchRow {
   row_id: bigint;
 }
@@ -449,6 +457,37 @@ export class SQLiteReservoir {
 
       totalReclaimed += reclaimedThisPass;
     }
+  }
+
+  recoverRestartState(): ReservoirRestartState {
+    const reclaimedInterruptedRows = this.#withTransaction(() => {
+      const result = this.#prepare(
+        `UPDATE ingress_events
+           SET replay_state = 'pending',
+               replay_claimed_at_ms = NULL
+           WHERE replay_state = 'replaying'`,
+      ).run();
+      return Number(result.changes);
+    });
+
+    if (reclaimedInterruptedRows > 0) {
+      this.#pendingRowCount = this.#readPendingRowCount();
+    }
+
+    const stats = this.getStats();
+    const attemptRow = this.#prepareReadBigInts(
+      `SELECT MAX(replay_attempts) AS maximum_replay_attempts
+         FROM ingress_events
+         WHERE replay_state = 'pending'`,
+    ).get() as { maximum_replay_attempts?: unknown };
+
+    return {
+      totalPendingRows: stats.totalPendingRows,
+      retryWaitingRows: stats.retryWaitingRows,
+      earliestRetryAt: stats.earliestRetryAt,
+      maximumReplayAttempts: parseCount(attemptRow.maximum_replay_attempts),
+      reclaimedInterruptedRows,
+    };
   }
 
   pruneExpired(fullOutageActive = false): PruneResult {

@@ -22,7 +22,7 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-Published version: `v0.2.0`.
+Published version: `v0.2.1`.
 
 ## When To Use It
 
@@ -218,7 +218,7 @@ So the current behavior is closer to “drop older buffered rows once they age p
 
 ## Schema Compatibility
 
-`v0.2.0` establishes SQLite schema version 1 as an explicit persistence contract.
+`v0.2.0` established SQLite schema version 1 as an explicit persistence contract. `v0.2.1` adds deterministic restart and upgrade recovery on top of that format.
 
 - new reservoirs record their schema version during transactional initialization
 - compatible unversioned databases created by earlier monitor releases migrate transactionally without discarding rows
@@ -226,6 +226,15 @@ So the current behavior is closer to “drop older buffered rows once they age p
 - newer, incomplete, and incompatible schemas fail before mutation with typed errors
 - `SQLiteReservoir.getSchemaInfo()` and `MonitorRuntime.getSchemaInfo()` expose the current and latest supported schema versions
 - file-backed reservoirs use WAL journaling with `synchronous=FULL` for higher write concurrency without reducing transaction synchronization
+
+On process restart, persisted row state is authoritative:
+
+- pending backlog automatically restores a queued replay posture and keeps live flow gated
+- interrupted `replaying` claims return immediately to `pending` because their in-memory owner ended with the previous process
+- an entirely retry-waiting backlog restores its failed/retry-waiting posture using the persisted absolute retry deadline and replay-attempt evidence
+- delivered and dead-letter rows remain terminal and are not returned to normal replay eligibility
+- replay ordering continues to use monitor ingest time and row identity
+- persisted `replay_sessions` remain audit history; they do not override current row state when reconstructing the coordinator
 
 Schema constants, information types, and compatibility errors are available through `@causal-order/monitor/storage`.
 
@@ -481,7 +490,7 @@ Compatibility-only metadata surfaces:
 - `monitorPackageVersion`
 - `monitorImplementationStatus`
 
-These remain part of the `v0.2.0` public compatibility contract and continue to follow the package's semantic-versioning guarantees.
+These remain part of the `v0.2.1` public compatibility contract and continue to follow the package's semantic-versioning guarantees.
 
 ## Node Support
 
