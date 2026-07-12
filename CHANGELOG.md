@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.1
+
+- reconciled persisted SQLite replay state when constructing a fresh runtime
+- made pending recovery backlog restore a queued replay posture and keep live flow gated before replay drain
+- reclaimed all persisted `replaying` claims immediately on process restart because their in-memory owner cannot survive the process boundary
+- restored an entirely retry-waiting backlog as failed/retry-waiting using its persisted absolute retry deadline and replay-attempt evidence
+- kept delivered and dead-letter rows terminal across restart
+- retained monitor-ingest-time and row-identity replay ordering after restart and schema upgrade
+- kept `replay_sessions` as audit history while treating current ingress row state as the recovery authority
+- preserved adapter-managed versus manual replay ownership enforcement after restart
+- added deterministic restart-state coverage for pending, interrupted, retry-waiting, delivered, and dead-letter rows, including gating and inspection output
+- added an upgrade-and-restart contract proving legacy accepted rows migrate, retain order and attempt counts, and reopen under the current schema
+- extended migration rollback validation to prove the same SQLite file can migrate successfully after the injected failure condition is removed
+- added restart-state and upgrade-restart contracts to default CI
+- validated the packed package in a clean consumer with `@causal-order/testing@0.2.6`, confirming that its monitor peer resolves to the top-level `@causal-order/monitor@0.2.1` installation without an older nested copy
+
 ## v0.2.0
 
 - established SQLite schema version 1 as an explicit persistence compatibility contract

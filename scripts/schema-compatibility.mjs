@@ -255,9 +255,22 @@ try {
     readColumnNames(rollbackDatabasePath, "ingress_events"),
     beforeColumns,
   );
+  {
+    const db = new DatabaseSync(rollbackDatabasePath);
+    db.exec("DROP TABLE idx_ingress_events_replay_retry");
+    db.close();
+  }
+  const retriedMigration = new SQLiteReservoir(
+    createConfig(rollbackDatabasePath),
+    () => 0n,
+  );
+  assert.equal(retriedMigration.getSchemaInfo().currentVersion, 1);
+  assert.equal(retriedMigration.getStats().totalPendingRows, 1);
+  retriedMigration.close();
+  assert.equal(readUserVersion(rollbackDatabasePath), 1);
 
   console.log(
-    "schema compatibility passed: new databases are versioned, legacy rows migrate transactionally, current schemas reopen idempotently, and newer/incompatible/failed migrations do not mutate data",
+    "schema compatibility passed: new databases are versioned, legacy rows migrate transactionally, current schemas reopen idempotently, newer/incompatible schemas do not mutate data, and rolled-back migrations can be retried",
   );
 } finally {
   rmSync(workspace, { recursive: true, force: true });

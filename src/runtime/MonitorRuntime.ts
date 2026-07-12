@@ -126,8 +126,8 @@ export class MonitorRuntime {
       this.#now,
     );
     this.#throttleTier = this.#config.throttle.defaultTier;
-    this.#recoveryReplayNeeded = false;
-    this.#observedRecoveryTransition = false;
+    this.#recoveryReplayNeeded = this.#reservoir.getPendingRowCount() > 0;
+    this.#observedRecoveryTransition = this.#recoveryReplayNeeded;
     this.#replayOwner = null;
   }
 

@@ -44,7 +44,34 @@ export class ReplayCoordinator {
     this.#config = config;
     this.#reservoir = reservoir;
     this.#now = now;
-    this.#snapshot = createSnapshot(config.healthConfirmationHeartbeats);
+    this.#snapshot = this.#createRestartSnapshot();
+  }
+
+  #createRestartSnapshot(): ReplaySessionSnapshot {
+    const restart = this.#reservoir.recoverRestartState();
+    if (restart.totalPendingRows === 0) {
+      return createSnapshot(this.#config.healthConfirmationHeartbeats);
+    }
+
+    const retryWaiting =
+      restart.retryWaitingRows === restart.totalPendingRows &&
+      restart.earliestRetryAt !== null;
+
+    return {
+      state: retryWaiting ? "failed" : "queued",
+      targetPath: "dedupe_then_order",
+      queuedEventCount: restart.totalPendingRows,
+      deliveredEventCount: 0,
+      startedAt: null,
+      endedAt: null,
+      lastError: retryWaiting
+        ? "Replay retry is waiting after process restart."
+        : null,
+      nextRetryAt: retryWaiting ? restart.earliestRetryAt : null,
+      consecutiveFailureCount: restart.maximumReplayAttempts,
+      recoveryHeartbeatCount: 0,
+      requiredRecoveryHeartbeats: this.#config.healthConfirmationHeartbeats,
+    };
   }
 
   getSnapshot(): ReplaySessionSnapshot {
