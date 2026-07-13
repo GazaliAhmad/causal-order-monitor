@@ -2,7 +2,15 @@
 
 Health-aware buffering, replay, and operator monitoring for the `causal-order` stack.
 
-`@causal-order/monitor` sits between transport ingestion and downstream delivery so your pipeline can keep accepting events, preserve backlog, and recover in a controlled way when `@causal-order/dedupe` or `causal-order` becomes unavailable.
+The supported integration path is:
+
+```text
+@causal-order/transport -> @causal-order/monitor -> @causal-order/dedupe -> causal-order
+```
+
+`@causal-order/monitor` owns buffering, degraded routing, and controlled replay between transport ingestion and downstream delivery. This lets the pipeline keep accepting events and preserve backlog when `@causal-order/dedupe` or `causal-order` becomes unavailable. Buffered events re-enter the downstream path through dedupe before causal ordering.
+
+The monitor also owns the SQLite event reservoir behind `SQLiteReservoir`. This is separate from any SQLite adapter offered by `@causal-order/persistence`: persistence-owned adapters serve persistence concerns such as WALs, checkpoints, and component state, while the monitor reservoir serves bounded ingress buffering and replay. They have independent data, schemas, lifecycles, and APIs; `@causal-order/persistence` does not absorb or abstract the monitor reservoir.
 
 ## Install
 
@@ -22,7 +30,7 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-Published version: `v0.2.1`.
+Published version: `v0.2.2`.
 
 ## When To Use It
 
@@ -216,9 +224,11 @@ In practical terms:
 
 So the current behavior is closer to “drop older buffered rows once they age past the ceiling” than “reject every new ingress immediately at the ceiling.”
 
+When a pending row ages out, it transitions to `dead_letter` and starts its own evidence-retention clock. Delivered evidence is retained independently. Each call to `pruneReservoir()` marks at most `pruneBatchSize` pending rows and deletes at most `pruneBatchSize` eligible terminal rows, so larger cleanup sets require repeated calls.
+
 ## Schema Compatibility
 
-`v0.2.0` established SQLite schema version 1 as an explicit persistence contract. `v0.2.1` adds deterministic restart and upgrade recovery on top of that format.
+`v0.2.0` established SQLite schema version 1 as an explicit persistence contract. `v0.2.1` added deterministic restart and upgrade recovery. `v0.2.2` migrates that format to schema version 2 so terminal evidence retention can be measured from the delivered or dead-letter transition.
 
 - new reservoirs record their schema version during transactional initialization
 - compatible unversioned databases created by earlier monitor releases migrate transactionally without discarding rows
@@ -240,6 +250,8 @@ Schema constants, information types, and compatibility errors are available thro
 
 Package and schema versions are independent: a package update does not imply a database migration unless the schema version changes.
 
+Schema version 2 adds `terminal_at_ms`. Existing terminal rows receive their original monitor-ingest time during migration; new delivered and dead-letter transitions record the transition time.
+
 ## Configuration
 
 For most deployments, the preferred bootstrap path is:
@@ -257,6 +269,9 @@ The lower-level `resolveMonitorConfig()` and `resolveMonitorConfigFromEnvironmen
 - `reservoir.fullOutageMaxWindowMs`: hard retention ceiling during deeper outages
 - `transport.heartbeatGraceMs`: heartbeat grace period before transport is considered stale
 - `reservoir.pruneBatchSize`: maximum number of rows to dead-letter or delete in each SQLite prune batch
+- `reservoir.deliveredRetentionMs`: delivered evidence retention, default `24h`
+- `reservoir.deadLetterRetentionMs`: dead-letter evidence retention, default `168h` (7 days)
+- `reservoir.walAutoCheckpointPages`: SQLite automatic WAL checkpoint threshold, default `1000` pages; set `0` to disable automatic checkpoints
 - `health.*.degradedAfterMs` and `health.*.offlineAfterMs`: thresholds for each component
 - `throttle.*`: ingress limits for each throttle tier
 - `replay.healthConfirmationHeartbeats`: heartbeats required before replay resumes
@@ -445,6 +460,8 @@ For raw state, use:
 - `getSnapshot()`
 - `getReplaySnapshot()`
 - `getReservoirStats()`
+- `getReservoirLifecycleStats()` for delivered and dead-letter evidence counts
+- `checkpointReservoirWal()` for explicit WAL maintenance results
 
 For operator-facing state, use:
 
@@ -459,6 +476,41 @@ The inspected snapshot is the easiest entry point when you want a quick read on:
 - backlog size and replay progress
 - whether operator attention is needed
 
+## Event Timing Evidence
+
+`v0.2.2` exports the type-only `MonitorEventTimingEvidence` contract for handing neutral timing facts to application-owned policy code:
+
+```ts
+import type { MonitorEventTimingEvidence } from "@causal-order/monitor/types";
+
+const monitorIngestTimeMs = event.ingestedAt;
+if (monitorIngestTimeMs === undefined) {
+  throw new Error("Monitor ingest time must be captured before producing timing evidence");
+}
+
+const observedTimeMs = BigInt(Date.now());
+const timing: MonitorEventTimingEvidence = {
+  eventTimeMs: event.clock.physicalTimeMs,
+  monitorIngestTimeMs,
+  observedTimeMs,
+  latenessMs: observedTimeMs - event.clock.physicalTimeMs,
+  causalMetadata: {
+    eventId: event.id,
+    nodeId: event.nodeId,
+  },
+};
+```
+
+The same type is also available from the package root:
+
+```ts
+import type { MonitorEventTimingEvidence } from "@causal-order/monitor";
+```
+
+`latenessMs` is signed so negative values retain clock-skew evidence instead of being silently classified. The interface introduces no runtime behavior, storage requirement, processing horizon, threshold, or policy preset.
+
+Monitor supplies a shared evidence shape; it does not decide what "too late" means. A company's development team or consultants remain responsible for accepting, flagging, quarantining, compensating, or discarding an event. Monitor's SQLite `dead_letter` state is a separate operational recovery outcome for buffered rows that exceed retention, not a business-lateness decision.
+
 ## Public Types
 
 Key exported types include:
@@ -466,6 +518,7 @@ Key exported types include:
 - `MonitorConfig`
 - `MonitorIngressEvent`
 - `MonitorIngressDecision`
+- `MonitorEventTimingEvidence`
 - `MonitorSnapshot`
 - `ReplaySessionSnapshot`
 - `ReservoirStats`
@@ -490,7 +543,7 @@ Compatibility-only metadata surfaces:
 - `monitorPackageVersion`
 - `monitorImplementationStatus`
 
-These remain part of the `v0.2.1` public compatibility contract and continue to follow the package's semantic-versioning guarantees.
+These remain part of the `v0.2.2` public compatibility contract and continue to follow the package's semantic-versioning guarantees.
 
 ## Node Support
 
@@ -502,6 +555,7 @@ These remain part of the `v0.2.1` public compatibility contract and continue to 
 - [Release history](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/CHANGELOG.md)
 - [Roadmap](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/ROADMAP.md)
 - [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
+- [Persistence operations](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/persistence-operations.md)
 
 ## License
 

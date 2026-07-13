@@ -219,6 +219,9 @@ function parseReservoirConfig(
       "fullOutageMaxWindowMs",
       "pruneIntervalMs",
       "pruneBatchSize",
+      "deliveredRetentionMs",
+      "deadLetterRetentionMs",
+      "walAutoCheckpointPages",
     ],
     ["reservoir"],
   );
@@ -240,6 +243,18 @@ function parseReservoirConfig(
     pruneBatchSize: parseOptionalPositiveInteger(
       objectValue.pruneBatchSize,
       ["reservoir", "pruneBatchSize"],
+    ),
+    deliveredRetentionMs: parseOptionalDuration(
+      objectValue.deliveredRetentionMs,
+      ["reservoir", "deliveredRetentionMs"],
+    ),
+    deadLetterRetentionMs: parseOptionalDuration(
+      objectValue.deadLetterRetentionMs,
+      ["reservoir", "deadLetterRetentionMs"],
+    ),
+    walAutoCheckpointPages: parseOptionalNonNegativeInteger(
+      objectValue.walAutoCheckpointPages,
+      ["reservoir", "walAutoCheckpointPages"],
     ),
   };
 }

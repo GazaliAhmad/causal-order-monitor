@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.2
+
+- added the type-only `MonitorEventTimingEvidence` contract on the root and `@causal-order/monitor/types` surfaces so applications can consume event time, monitor-ingest time, observation time, signed lateness, and causal metadata without monitor defining business horizons or late-event policy
+- kept late-event acceptance, flagging, quarantine, compensation, and discard decisions outside monitor; those policies and their configuration remain owned by each company's development team or consultants
+- introduced SQLite schema version 2 with a transactional migration that records terminal-state transition time without discarding existing rows
+- added independent `reservoir.deliveredRetentionMs` and `reservoir.deadLetterRetentionMs` policies, defaulting to 24 hours and 7 days respectively
+- made each prune call bound terminal transitions and deletion work by `reservoir.pruneBatchSize`
+- exposed delivered and dead-letter row counts through `SQLiteReservoir.getLifecycleStats()`
+- added configurable `reservoir.walAutoCheckpointPages` behavior and explicit passive, restart, and truncate checkpoints with structured results
+- made reservoir close perform a passive WAL checkpoint before closing the SQLite connection
+- added terminal-retention, WAL-lifecycle, and stopped backup/restore/relocation contracts to default CI
+- documented safe persistence operations, migration-failure recovery, local-filesystem requirements, rollback limits, WAL sidecars, and maintenance-only compaction
+- preserved v0.2.0 schema compatibility and v0.2.1 restart, replay, ownership, ordering, and terminal-state invariants
+- validated the packed package in a clean consumer with `@causal-order/transport@0.1.2`, `@causal-order/dedupe@1.1.1`, `causal-order@1.0.0`, and `@causal-order/testing@0.2.6`, resolving one deduplicated monitor v0.2.2 and passing TypeScript plus transport-to-dedupe-to-order runtime integration
+
 ## v0.2.1
 
 - reconciled persisted SQLite replay state when constructing a fresh runtime

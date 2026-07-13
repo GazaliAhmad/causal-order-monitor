@@ -1,6 +1,10 @@
 export {
   SQLiteReservoir,
+  type PruneResult,
+  type ReservoirLifecycleStats,
   type ReservoirReplayEntry,
+  type WalCheckpointMode,
+  type WalCheckpointResult,
 } from "./storage/SQLiteReservoir.js";
 export {
   MONITOR_SQLITE_SCHEMA_VERSION,

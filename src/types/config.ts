@@ -15,6 +15,9 @@ export interface MonitorReservoirConfig {
   fullOutageMaxWindowMs: bigint;
   pruneIntervalMs: bigint;
   pruneBatchSize: number;
+  deliveredRetentionMs?: bigint;
+  deadLetterRetentionMs?: bigint;
+  walAutoCheckpointPages?: number;
 }
 
 export interface MonitorTransportConfig {
@@ -87,6 +90,9 @@ export interface MonitorJsonReservoirConfig {
   fullOutageMaxWindowMs?: MonitorJsonDuration;
   pruneIntervalMs?: MonitorJsonDuration;
   pruneBatchSize?: number;
+  deliveredRetentionMs?: MonitorJsonDuration;
+  deadLetterRetentionMs?: MonitorJsonDuration;
+  walAutoCheckpointPages?: number;
 }
 
 export interface MonitorJsonTransportConfig {
@@ -141,6 +147,9 @@ export function createDefaultMonitorConfig(): MonitorConfig {
       fullOutageMaxWindowMs: 6n * 60n * 60n * 1000n,
       pruneIntervalMs: 60_000n,
       pruneBatchSize: 1_000,
+      deliveredRetentionMs: 24n * 60n * 60n * 1000n,
+      deadLetterRetentionMs: 7n * 24n * 60n * 60n * 1000n,
+      walAutoCheckpointPages: 1_000,
     },
     transport: {
       heartbeatGraceMs: 15_000n,

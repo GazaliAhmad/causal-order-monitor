@@ -12,6 +12,7 @@ export {
   type MonitorClock,
   type MonitorComponent,
   type MonitorDeliveryMode,
+  type MonitorEventTimingEvidence,
   type MonitorEventPayload,
   type MonitorHealthState,
   type MonitorHealthUpdate,

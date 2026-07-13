@@ -114,9 +114,9 @@ async function runFullOutageContractScenario() {
 
     const pruneResult = adapter.getRuntime().pruneReservoir();
     assert.equal(pruneResult.markedDeadLetter, 1);
-    assert.equal(pruneResult.deletedRows, 1);
+    assert.equal(pruneResult.deletedRows, 0);
     assert.equal(adapter.getSnapshot().reservoir.totalPendingRows, 1);
-    assert.equal(getReplayStateCount(databasePath, "dead_letter"), 0);
+    assert.equal(getReplayStateCount(databasePath, "dead_letter"), 1);
     assert.equal(getReplayStateCount(databasePath, "pending"), 1);
   } finally {
     adapter.close();

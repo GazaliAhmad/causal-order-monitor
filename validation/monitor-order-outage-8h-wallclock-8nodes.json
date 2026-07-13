@@ -1,0 +1,91 @@
+{
+  "generatedAt": "2026-07-13T00:00:00.000Z",
+  "validationName": "monitor-order-outage-8h-wallclock-8nodes",
+  "sanitized": true,
+  "sourceRun": {
+    "runFolder": "2026-07-12T10-21-15Z-monitor-order-outage-8h",
+    "profileName": "monitor-order-outage",
+    "scenarioId": "monitor-order-outage",
+    "adapterModule": "@causal-order/transport/testing",
+    "nodeCount": 8,
+    "nodeIds": [
+      "edge-a",
+      "edge-b",
+      "edge-c",
+      "edge-d",
+      "edge-e",
+      "edge-f",
+      "edge-g",
+      "edge-h"
+    ]
+  },
+  "timing": {
+    "startedAtIso": "2026-07-12T10:21:15.386Z",
+    "finishedAtIso": "2026-07-12T18:23:57.303Z",
+    "wallElapsedMs": 28961917,
+    "wallElapsedHuman": "8h 2m 42s",
+    "simulatedElapsedMs": "28961917",
+    "durationTarget": "8h",
+    "timeScale": 1,
+    "reportEvery": "15m"
+  },
+  "workload": {
+    "eventsPerSecond": 15,
+    "chaosMultiplier": 1.7,
+    "batchSize": 200,
+    "lateArrivalPolicy": "flag",
+    "monitorEnabled": true
+  },
+  "results": {
+    "status": "completed",
+    "receivedEvents": 652413,
+    "orderedEvents": 643129,
+    "dedupeDroppedDuplicates": 13334,
+    "anomalies": 282780,
+    "anomalySeverity": {
+      "warning": 282780
+    },
+    "anomalyTypes": {
+      "sequence_regression": 8835,
+      "late_arrival": 273945
+    },
+    "monitor": {
+      "bufferedEvents": 19924,
+      "forwardedToDedupe": 656463,
+      "forwardedToOrder": 0,
+      "routingModes": {
+        "normal": 632489,
+        "order_buffer_only": 11454,
+        "replay_through_dedupe": 8470
+      },
+      "deliveryModes": {
+        "normal": 632489,
+        "order_buffer_only": 11454,
+        "replay_through_dedupe": 8470
+      },
+      "finalReplayState": "idle",
+      "endedDrained": true,
+      "pendingRows": 0,
+      "retryWaitingRows": 0,
+      "replayConsecutiveFailureCount": 0,
+      "duplicateLeakArtifactEmitted": false
+    }
+  },
+  "interpretation": {
+    "validatedBehavior": [
+      "The 8-node wall-clock run exercised normal flow, order-outage buffering, recovery replay through dedupe, and final drain.",
+      "The 11454 order_buffer_only routes and 8470 replay_through_dedupe routes account for all 19924 buffered events.",
+      "Replay returned to idle with zero pending rows, zero retry-waiting rows, and no consecutive replay failures.",
+      "All recorded anomalies were warnings generated under the stress profile and did not prevent recovery."
+    ],
+    "notValidated": [
+      "This run did not exercise the full dual-downstream-outage path.",
+      "This run did not inject a replay-delivery failure or validate retry backoff.",
+      "This run did not demonstrate the protective stop path that would surface as HTTP 503."
+    ],
+    "notes": [
+      "The harness emitted no duplicate-leaks.ndjson artifact for this run.",
+      "Paths, the SQLite database location, peer instance identifiers, and host-specific filesystem details were intentionally omitted."
+    ]
+  }
+}

@@ -59,6 +59,22 @@ export interface MonitorIngressEvent {
   [key: string]: unknown;
 }
 
+/**
+ * Neutral timing evidence for application-owned late-event policy.
+ *
+ * This contract reports observable facts only. It deliberately does not define
+ * a processing horizon or prescribe accept, quarantine, compensate, or drop
+ * decisions.
+ */
+export interface MonitorEventTimingEvidence {
+  eventTimeMs: bigint;
+  monitorIngestTimeMs: bigint;
+  observedTimeMs: bigint;
+  /** Signed `observedTimeMs - eventTimeMs`; negative values preserve clock-skew evidence. */
+  latenessMs: bigint;
+  causalMetadata?: Readonly<Record<string, unknown>>;
+}
+
 export interface MonitorPeerStateEvent {
   peerId: string;
   state: MonitorPeerState;
