@@ -92,6 +92,7 @@ for (const { exportName, subpathModule, subpathLabel } of firstWaveDeprecatedRoo
 
 const rootDts = readFileSync(resolve(".build/src/index.d.ts"), "utf8");
 const replayDts = readFileSync(resolve(".build/src/replay.d.ts"), "utf8");
+const typesDts = readFileSync(resolve(".build/src/types.d.ts"), "utf8");
 
 assert.match(
   rootDts,
@@ -102,6 +103,16 @@ assert.match(
   replayDts,
   /export \{ ReplayCoordinator, type ReplayBatch \}/,
   "the replay subpath declaration surface should keep exporting ReplayBatch as the replacement type path",
+);
+assert.match(
+  rootDts,
+  /type MonitorEventTimingEvidence/,
+  "the root declaration surface should export neutral event timing evidence",
+);
+assert.match(
+  typesDts,
+  /type MonitorEventTimingEvidence/,
+  "the types subpath should export neutral event timing evidence",
 );
 
 const rootAndSubpathChecks = [
@@ -260,7 +271,7 @@ for (const exportName of [
 ]) {
   assertOwnExport(storage, exportName, "@causal-order/monitor/storage");
 }
-assert.equal(storage.MONITOR_SQLITE_SCHEMA_VERSION, 1);
+assert.equal(storage.MONITOR_SQLITE_SCHEMA_VERSION, 2);
 
 assert.ok(
   packageJson.exports["./replay"]?.types,

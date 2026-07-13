@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.2.1` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
+This file records the `v0.2.2` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -12,12 +12,14 @@ This file records the `v0.2.1` release baseline for `@causal-order/monitor` whil
 - Keep one recovery truth path whenever possible.
 - Treat transport outages as a first-class operational signal even when `/monitor` cannot buffer events it never receives.
 - Make operator evidence part of the product, not a later cleanup task.
+- Expose timing and lateness as neutral evidence; leave every business horizon, threshold, and disposition decision to application owners.
 - Align `/monitor` validation with `@causal-order/testing` instead of inventing a separate testing world.
 
 ## Current Release
 
-- Status: `v0.2.1` is the current published npm release.
-- The `v0.2.1` package adds deterministic restart and upgrade recovery to the `v0.2.0` schema foundation while preserving the `v0.1.3` API migration contract.
+- Status: `v0.2.2` is the current published npm release.
+- The `v0.2.2` package completes the persistence-lifecycle phase with bounded terminal retention, explicit WAL lifecycle controls, and tested persistence operations while preserving the `v0.2.1` recovery contract.
+- `v0.2.2` adds the type-only `MonitorEventTimingEvidence` handoff at the root and `/types` entrypoints so applications can receive event time, monitor-ingest time, observation time, signed lateness, and causal metadata without monitor prescribing business policy.
 - The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 
 ## Package Intent
@@ -40,6 +42,15 @@ Its role is to:
 - record transport blackout and reconnect-burst periods
 - coordinate replay when the stack recovers
 - expose enough runtime evidence for operators and harness tooling to explain what happened
+- expose policy-neutral event timing evidence for company-owned application logic
+
+### SQLite ownership boundary
+
+`@causal-order/monitor` owns its bounded event reservoir and its SQLite implementation, `SQLiteReservoir`. That store is part of monitor's ingress-buffering and replay contract; it is not delegated to or abstracted by `@causal-order/persistence`.
+
+`@causal-order/persistence` may independently provide SQLite as one adapter for persistence-owned concerns such as WALs, checkpoints, and component state. The two packages may therefore both use SQLite, but they own separate data, schemas, lifecycles, and APIs. A persistence SQLite adapter does not absorb the monitor reservoir, and no future consolidation should be inferred without a separate explicit architecture decision.
+
+The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.3.0. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
 
 It is not meant to be:
 
@@ -47,6 +58,8 @@ It is not meant to be:
 - a generic dashboard product
 - a replacement for `causal-order`
 - a replacement for `@causal-order/dedupe`
+- a lateness policy engine or source of business-operation thresholds and presets
+- a business dead-letter, quarantine, compensation, or discard decision-maker
 
 ## Shipped Scope
 
@@ -69,7 +82,7 @@ The `v0.1.1` release includes:
 - convenience runtime and adapter boot helpers for file-backed or environment-backed startup
 - monotonic-backed wall-clock timing inside the default runtime
 - batched prune enforcement through `reservoir.pruneBatchSize`
-- tracked release-facing validation records for the overnight 8-node dual-outage wall-clock run
+- tracked release-facing validation records for overnight 8-node dual-outage and order-outage wall-clock runs
 
 ## Fixed Release Decisions
 
@@ -100,7 +113,7 @@ The `v0.1.1` release is backed by:
 - direct retention/admission coverage through `npm run test:retention-admission-contract`
 - deterministic 8-node threshold validation through `npm run test:http-thresholds-8nodes`
 - operational suite coverage through `npm run test:monitor-operational-smoke` and `npm run test:monitor-operational-full`
-- tracked overnight 8-node wall-clock validation in `validation/monitor-dual-outage-8h-wallclock-8nodes.md`
+- tracked overnight 8-node wall-clock validation in `validation/monitor-dual-outage-8h-wallclock-8nodes.md` and `validation/monitor-order-outage-8h-wallclock-8nodes.md`
 
 ## Acceptance Summary
 
@@ -256,6 +269,8 @@ Acceptance results:
 
 Turn the monitor's SQLite format from an implementation detail into a supported upgrade contract.
 
+In this phase, "persistence lifecycle" means the monitor-owned `SQLiteReservoir` lifecycle. It does not refer to integration with the planned `@causal-order/persistence` package.
+
 `v0.2.0` delivered the schema compatibility foundation:
 
 - schema version 1 is recorded and exposed independently from the package version
@@ -273,7 +288,16 @@ Turn the monitor's SQLite format from an implementation detail into a supported 
 - upgrade plus restart preserves accepted-row ordering and schema state
 - rolled-back migrations can be corrected and retried against the same SQLite file
 
-The remaining `v0.2.x` work in `v0.2.2` covers terminal-row retention, WAL lifecycle, backup, restore, and relocation.
+`v0.2.2` completes the remaining `v0.2.x` persistence-lifecycle work:
+
+- schema version 2 records terminal transition time through a transactional version 1 migration
+- delivered and dead-letter evidence have independent, explicit retention policies
+- prune work is bounded per call and exposes deletion results
+- WAL automatic and explicit checkpoint behavior is configurable and observable
+- stopped backup, restore, and relocation preserve schema version and accepted rows
+- persistence operations and rollback limitations are documented for operators
+- `MonitorEventTimingEvidence` provides a type-only, policy-neutral application handoff on both public declaration surfaces
+- operational SQLite `dead_letter` state remains distinct from business lateness; no `/lateness` or `/dead-letter` package is introduced
 
 - record and expose a reservoir schema version
 - replace ad-hoc column additions with deterministic, transactional migrations
@@ -292,17 +316,21 @@ Exit criteria:
 
 Prove deterministic behavior at the failure boundaries most likely to damage recovery confidence.
 
+This phase hardens the standalone monitor. It does not introduce `@causal-order/persistence` integration, a shared `recoveryEventId`, cross-store reconciliation, persistence-candidate admission, or a `StateHydrator` handoff. Those changes begin with the first persistence-integration milestone and must not be introduced incidentally during v0.3.0 hardening.
+
 - exercise process termination and restart during append, replay claim, acknowledgement, retry, reclaim, and prune operations
 - validate busy/locked databases, disk-full behavior, read-only paths, WAL failures, corrupt files, and actionable startup errors
 - stress concurrent ingress, health updates, replay, inspection, pruning, and shutdown
 - specify payload serialization failures, size expectations, unsupported values, and sensitive-data responsibilities
 - make `close()` behavior idempotent and define calls made after shutdown
+- preserve the policy-neutral timing-evidence export without adding business lateness configuration or routing
 
 Exit criteria:
 
 - accepted rows retain a documented terminal outcome across every tested crash point
 - replay ownership and ordering invariants hold under concurrent pressure
 - storage failures produce explicit boundary results or typed errors rather than ambiguous partial success
+- crash and storage hardening do not turn monitor timing evidence into company-specific business policy
 
 ## Phase 4: Versioned Operator Contract (Target: `v0.4.0`)
 

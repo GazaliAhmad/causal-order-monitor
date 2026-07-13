@@ -26,6 +26,9 @@ Individual checks are available through:
 - `npm run test:retention-admission-contract`
 - `npm run test:runtime-bootstrap`
 - `npm run test:schema-compatibility`
+- `npm run test:terminal-retention-contract`
+- `npm run test:wal-lifecycle-contract`
+- `npm run test:backup-restore-contract`
 - `npm run test:replay-safety`
 
 ## Operational Harness

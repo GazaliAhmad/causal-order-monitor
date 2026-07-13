@@ -37,6 +37,9 @@ function runExpiredPendingScenario() {
       fullOutageMaxWindowMs: 6_000n,
       pruneIntervalMs: 100n,
       pruneBatchSize,
+      deliveredRetentionMs: 1_000n,
+      deadLetterRetentionMs: 2_000n,
+      walAutoCheckpointPages: 1_000,
     },
     () => nowMs,
   );
@@ -52,8 +55,10 @@ function runExpiredPendingScenario() {
 
     nowMs = 6_500n;
     const pruneResult = reservoir.pruneExpired(false);
-    assert.equal(pruneResult.markedDeadLetter, 250);
-    assert.equal(pruneResult.deletedRows, 250);
+    assert.equal(pruneResult.markedDeadLetter, 100);
+    assert.equal(pruneResult.deletedRows, 0);
+    assert.equal(reservoir.pruneExpired(false).markedDeadLetter, 100);
+    assert.equal(reservoir.pruneExpired(false).markedDeadLetter, 50);
     assert.equal(reservoir.getStats().totalPendingRows, 0);
   } finally {
     reservoir.close();
@@ -73,6 +78,9 @@ function runExpiredDeliveredScenario() {
       fullOutageMaxWindowMs: 6_000n,
       pruneIntervalMs: 100n,
       pruneBatchSize,
+      deliveredRetentionMs: 1_000n,
+      deadLetterRetentionMs: 2_000n,
+      walAutoCheckpointPages: 1_000,
     },
     () => nowMs,
   );
@@ -90,7 +98,9 @@ function runExpiredDeliveredScenario() {
     nowMs = 1_500n;
     const pruneResult = reservoir.pruneExpired(false);
     assert.equal(pruneResult.markedDeadLetter, 0);
-    assert.equal(pruneResult.deletedRows, 250);
+    assert.equal(pruneResult.deletedRows, 100);
+    assert.equal(reservoir.pruneExpired(false).deletedRows, 100);
+    assert.equal(reservoir.pruneExpired(false).deletedRows, 50);
     assert.equal(reservoir.getStats().totalPendingRows, 0);
   } finally {
     reservoir.close();
@@ -102,5 +112,5 @@ runExpiredPendingScenario();
 runExpiredDeliveredScenario();
 
 console.log(
-  "prune batching passed: expired pending and terminal rows are drained across multiple batched prune passes without changing retention outcomes",
+  "prune batching passed: each prune call is bounded and repeated calls drain expired pending and terminal rows deterministically",
 );

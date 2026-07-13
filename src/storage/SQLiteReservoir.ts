@@ -44,9 +44,23 @@ export interface ReservoirReplayEntry {
   replayAttempts: number;
 }
 
-interface PruneResult {
+export interface PruneResult {
   markedDeadLetter: number;
   deletedRows: number;
+}
+
+export type WalCheckpointMode = "passive" | "restart" | "truncate";
+
+export interface WalCheckpointResult {
+  mode: WalCheckpointMode;
+  busy: boolean;
+  logFrames: number;
+  checkpointedFrames: number;
+}
+
+export interface ReservoirLifecycleStats {
+  deliveredRows: number;
+  deadLetterRows: number;
 }
 
 export interface ReservoirRestartState {
@@ -80,6 +94,7 @@ const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
   replay_attempts,
   retry_not_before_ms,
   replay_claimed_at_ms,
+  terminal_at_ms,
   expires_at_ms
 ) VALUES (
   @id,
@@ -98,6 +113,7 @@ const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
   @replay_attempts,
   @retry_not_before_ms,
   @replay_claimed_at_ms,
+  @terminal_at_ms,
   @expires_at_ms
 )`;
 
@@ -199,6 +215,7 @@ export class SQLiteReservoir {
       this.#schemaInfo = applyMonitorSchema(db, config.databasePath);
       db.exec("PRAGMA journal_mode = WAL");
       db.exec("PRAGMA synchronous = FULL");
+      db.exec(`PRAGMA wal_autocheckpoint = ${config.walAutoCheckpointPages ?? 1_000}`);
       this.#appendIngressStatement = db.prepare(INSERT_INGRESS_EVENT_SQL);
       this.#pendingRowCount = this.#readPendingRowCount();
     } catch (error) {
@@ -251,6 +268,10 @@ export class SQLiteReservoir {
           ? null
           : toSqlBigInt(options.retryNotBeforeMs),
       replay_claimed_at_ms: null,
+      terminal_at_ms:
+        replayState === "delivered" || replayState === "dead_letter"
+          ? toSqlBigInt(monitorIngestAt)
+          : null,
       expires_at_ms: toSqlBigInt(expiresAt),
     });
 
@@ -508,6 +529,35 @@ export class SQLiteReservoir {
     };
   }
 
+  checkpointWal(mode: WalCheckpointMode = "passive"): WalCheckpointResult {
+    const pragmaMode = mode.toUpperCase();
+    const row = this.#prepareReadBigInts(
+      `PRAGMA wal_checkpoint(${pragmaMode})`,
+    ).get() as Record<string, unknown> | undefined;
+    const values = Object.values(row ?? {});
+    return {
+      mode,
+      busy: parseCount(values[0]) !== 0,
+      logFrames: parseCount(values[1]),
+      checkpointedFrames: parseCount(values[2]),
+    };
+  }
+
+  getLifecycleStats(): ReservoirLifecycleStats {
+    const rows = this.#prepareReadBigInts(
+      `SELECT replay_state, COUNT(*) AS count
+         FROM ingress_events
+         WHERE replay_state IN ('delivered', 'dead_letter')
+         GROUP BY replay_state`,
+    ).all() as Array<{ replay_state: "delivered" | "dead_letter"; count: unknown }>;
+    const stats: ReservoirLifecycleStats = { deliveredRows: 0, deadLetterRows: 0 };
+    for (const row of rows) {
+      if (row.replay_state === "delivered") stats.deliveredRows = parseCount(row.count);
+      else stats.deadLetterRows = parseCount(row.count);
+    }
+    return stats;
+  }
+
   getStats(): ReservoirStats {
     const totalPendingRows = this.getPendingRowCount();
 
@@ -591,6 +641,7 @@ export class SQLiteReservoir {
   }
 
   close(): void {
+    this.checkpointWal("passive");
     this.#db.close();
   }
 
@@ -608,13 +659,17 @@ export class SQLiteReservoir {
       `UPDATE ingress_events
          SET replay_state = ?,
              retry_not_before_ms = ?,
-             replay_claimed_at_ms = NULL
+             replay_claimed_at_ms = NULL,
+             terminal_at_ms = ?
          WHERE rowid IN (${placeholders})`,
     ).run(
       nextState,
       retryNotBeforeMs === null || retryNotBeforeMs === undefined
         ? null
         : toSqlBigInt(retryNotBeforeMs),
+      nextState === "delivered" || nextState === "dead_letter"
+        ? toSqlBigInt(this.#now())
+        : null,
       ...rowIds,
     );
     const changedRows = Number(result.changes);
@@ -629,40 +684,22 @@ export class SQLiteReservoir {
     rollingCutoff: bigint,
   ): number {
     const pendingBatchSize = this.#config.pruneBatchSize;
-    let totalMarked = 0;
-
-    while (true) {
-      const markedThisPass = this.#withTransaction(() => {
-        const rowIds = this.#selectExpiredPendingRowIds(
-          hardCutoff,
-          rollingCutoff,
-          pendingBatchSize,
-        );
-        return this.#updateReplayRows(rowIds, "dead_letter", null);
-      });
-      if (markedThisPass === 0) {
-        return totalMarked;
-      }
-
-      totalMarked += markedThisPass;
-    }
+    return this.#withTransaction(() => {
+      const rowIds = this.#selectExpiredPendingRowIds(
+        hardCutoff,
+        rollingCutoff,
+        pendingBatchSize,
+      );
+      return this.#updateReplayRows(rowIds, "dead_letter", null);
+    });
   }
 
   #deleteExpiredTerminalRows(now: bigint): number {
     const deleteBatchSize = this.#config.pruneBatchSize;
-    let totalDeleted = 0;
-
-    while (true) {
-      const deletedThisPass = this.#withTransaction(() => {
-        const rowIds = this.#selectExpiredTerminalRowIds(now, deleteBatchSize);
-        return this.#deleteRowsByIds(rowIds);
-      });
-      if (deletedThisPass === 0) {
-        return totalDeleted;
-      }
-
-      totalDeleted += deletedThisPass;
-    }
+    return this.#withTransaction(() => {
+      const rowIds = this.#selectExpiredTerminalRowIds(now, deleteBatchSize);
+      return this.#deleteRowsByIds(rowIds);
+    });
   }
 
   #selectExpiredPendingRowIds(
@@ -715,12 +752,21 @@ export class SQLiteReservoir {
     const rows = this.#prepareReadBigInts(
       `SELECT rowid AS row_id
          FROM ingress_events
-         WHERE replay_state IN ('delivered', 'dead_letter')
-           AND expires_at_ms <= @expires_at_ms
-         ORDER BY expires_at_ms ASC, rowid ASC
+         WHERE terminal_at_ms IS NOT NULL
+           AND (
+             (replay_state = 'delivered' AND terminal_at_ms <= @delivered_cutoff)
+             OR
+             (replay_state = 'dead_letter' AND terminal_at_ms <= @dead_letter_cutoff)
+           )
+         ORDER BY terminal_at_ms ASC, rowid ASC
          LIMIT @limit`,
     ).all({
-      expires_at_ms: toSqlBigInt(now),
+      delivered_cutoff: toSqlBigInt(
+        now - (this.#config.deliveredRetentionMs ?? 24n * 60n * 60n * 1000n),
+      ),
+      dead_letter_cutoff: toSqlBigInt(
+        now - (this.#config.deadLetterRetentionMs ?? 7n * 24n * 60n * 60n * 1000n),
+      ),
       limit,
     }) as unknown as PruneBatchRow[];
 

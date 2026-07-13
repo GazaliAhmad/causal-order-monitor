@@ -1,4 +1,4 @@
-export const monitorPackageVersion = "0.2.1";
+export const monitorPackageVersion = "0.2.2";
 
 export type MonitorImplementationStatus = "replay_operational";
 
@@ -49,6 +49,7 @@ export {
   type MonitorClock,
   type MonitorComponent,
   type MonitorDeliveryMode,
+  type MonitorEventTimingEvidence,
   type MonitorHealthState,
   type MonitorHealthUpdate,
   type MonitorIngressAction,
@@ -79,7 +80,11 @@ export {
 export { MonitorRuntime, ReplayOwnershipError } from "./runtime/MonitorRuntime.js";
 export {
   SQLiteReservoir,
+  type PruneResult,
+  type ReservoirLifecycleStats,
   type ReservoirReplayEntry,
+  type WalCheckpointMode,
+  type WalCheckpointResult,
 } from "./storage/SQLiteReservoir.js";
 export {
   createTransportMonitorAdapterFromEnvironment,

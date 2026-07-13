@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-export const MONITOR_SQLITE_SCHEMA_VERSION = 1;
+export const MONITOR_SQLITE_SCHEMA_VERSION = 2;
 
 export interface MonitorSchemaInfo {
   currentVersion: number;
@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS ingress_events (
   replay_attempts INTEGER NOT NULL DEFAULT 0,
   retry_not_before_ms INTEGER,
   replay_claimed_at_ms INTEGER,
+  terminal_at_ms INTEGER,
   expires_at_ms INTEGER NOT NULL
 );
 
@@ -137,6 +138,9 @@ CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_ingest_time
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_expiry
   ON ingress_events(replay_state, expires_at_ms);
+
+CREATE INDEX IF NOT EXISTS idx_ingress_events_terminal_retention
+  ON ingress_events(replay_state, terminal_at_ms);
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_source_path
   ON ingress_events(source_path);
@@ -201,6 +205,7 @@ const REQUIRED_COLUMNS = {
     "replay_attempts",
     "retry_not_before_ms",
     "replay_claimed_at_ms",
+    "terminal_at_ms",
     "expires_at_ms",
   ],
   component_health_log: [
@@ -236,6 +241,7 @@ const REQUIRED_COLUMNS = {
 const LEGACY_OPTIONAL_INGRESS_COLUMNS = new Set([
   "retry_not_before_ms",
   "replay_claimed_at_ms",
+  "terminal_at_ms",
 ]);
 
 const MONITOR_SCHEMA_MIGRATIONS: ReadonlyArray<MonitorSchemaMigration> = [
@@ -250,6 +256,24 @@ const MONITOR_SCHEMA_MIGRATIONS: ReadonlyArray<MonitorSchemaMigration> = [
       if (!ingressColumns.has("replay_claimed_at_ms")) {
         db.exec(`ALTER TABLE ingress_events ADD COLUMN replay_claimed_at_ms INTEGER`);
       }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_retry
+        ON ingress_events(replay_state, retry_not_before_ms)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_ingress_events_replay_claimed
+        ON ingress_events(replay_state, replay_claimed_at_ms)`);
+    },
+  },
+  {
+    fromVersion: 1,
+    toVersion: 2,
+    apply(db) {
+      const ingressColumns = getColumnNames(db, "ingress_events");
+      if (!ingressColumns.has("terminal_at_ms")) {
+        db.exec(`ALTER TABLE ingress_events ADD COLUMN terminal_at_ms INTEGER`);
+      }
+      db.exec(`UPDATE ingress_events
+        SET terminal_at_ms = monitor_ingest_at_ms
+        WHERE replay_state IN ('delivered', 'dead_letter')
+          AND terminal_at_ms IS NULL`);
       db.exec(MONITOR_SQLITE_SCHEMA);
     },
   },
@@ -421,9 +445,36 @@ export function applyMonitorSchema(
     };
   }
 
-  if (detectedVersion === 0) {
+  if (detectedVersion < MONITOR_SQLITE_SCHEMA_VERSION) {
     validateSchemaStructure(db, databasePath, detectedVersion, true);
-    withSchemaTransaction(db, () => migrateLegacySchema(db, databasePath));
+    withSchemaTransaction(db, () => {
+      let currentVersion = detectedVersion;
+      while (currentVersion < MONITOR_SQLITE_SCHEMA_VERSION) {
+        const migration = MONITOR_SCHEMA_MIGRATIONS.find(
+          (candidate) => candidate.fromVersion === currentVersion,
+        );
+        if (!migration) {
+          throw new MonitorSchemaCompatibilityError(
+            databasePath,
+            currentVersion,
+            `No migration path exists from version ${currentVersion}.`,
+          );
+        }
+        try {
+          migration.apply(db);
+          setSchemaVersion(db, migration.toVersion);
+          currentVersion = migration.toVersion;
+        } catch (error) {
+          if (error instanceof MonitorSchemaError) throw error;
+          throw new MonitorSchemaMigrationError(
+            databasePath,
+            migration.fromVersion,
+            migration.toVersion,
+            error,
+          );
+        }
+      }
+    });
     validateSchemaStructure(
       db,
       databasePath,
@@ -433,7 +484,7 @@ export function applyMonitorSchema(
     return {
       currentVersion: MONITOR_SQLITE_SCHEMA_VERSION,
       latestSupportedVersion: MONITOR_SQLITE_SCHEMA_VERSION,
-      migratedFromLegacy: true,
+      migratedFromLegacy: detectedVersion === 0,
     };
   }
 

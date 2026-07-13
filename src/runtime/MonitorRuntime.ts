@@ -6,7 +6,12 @@ import { HealthTracker } from "../health/HealthTracker.js";
 import { inspectMonitorSnapshot } from "../inspect/inspectMonitorSnapshot.js";
 import { DeliveryRouter } from "../routing/DeliveryRouter.js";
 import { ReplayCoordinator } from "../replay/ReplayCoordinator.js";
-import { SQLiteReservoir } from "../storage/SQLiteReservoir.js";
+import {
+  SQLiteReservoir,
+  type ReservoirLifecycleStats,
+  type WalCheckpointMode,
+  type WalCheckpointResult,
+} from "../storage/SQLiteReservoir.js";
 import type { MonitorSchemaInfo } from "../storage/schema.js";
 import { ThrottleController } from "../throttle/ThrottleController.js";
 import type {
@@ -161,6 +166,16 @@ export class MonitorRuntime {
 
   getSchemaInfo(): Readonly<MonitorSchemaInfo> {
     return this.#reservoir.getSchemaInfo();
+  }
+
+  getReservoirLifecycleStats(): ReservoirLifecycleStats {
+    return this.#reservoir.getLifecycleStats();
+  }
+
+  checkpointReservoirWal(
+    mode: WalCheckpointMode = "passive",
+  ): WalCheckpointResult {
+    return this.#reservoir.checkpointWal(mode);
   }
 
   getReplaySnapshot(): ReplaySessionSnapshot {
