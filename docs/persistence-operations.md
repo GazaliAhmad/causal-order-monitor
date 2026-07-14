@@ -18,6 +18,50 @@ File-backed reservoirs use WAL journaling and `synchronous=FULL`. `reservoir.wal
 
 `SQLiteReservoir.checkpointWal()` exposes `passive`, `restart`, and `truncate` modes and returns whether the checkpoint was busy plus its log and checkpointed frame counts. Routine inspection should use `passive`. Use `truncate` only during a controlled maintenance or backup window because it can wait on active readers. Closing a reservoir performs a passive checkpoint; crash cleanup must not depend on close running.
 
+## Storage failure handling
+
+The monitor does not hide SQLite storage failures or convert a rejected write into an accepted event. Operators should correct the underlying storage condition before retrying or restarting repeatedly.
+
+### Busy and locked databases
+
+The supported ownership model remains one monitor writer process. If another SQLite connection holds a conflicting write transaction, append, replay transition, acknowledgement, and prune writes fail without committing a partial transition. Release the unexpected writer or transaction before retrying.
+
+WAL checkpoints report contention through `WalCheckpointResult.busy`. A busy `restart` or `truncate` checkpoint is not successful maintenance completion; allow active readers/writers to settle and retry in a controlled window.
+
+### Read-only paths and exhausted storage
+
+The database and its parent directory must remain writable so SQLite can update the primary file and create or update `-wal` and `-shm` sidecars. A read-only SQLite connection rejects mutation while preserving existing rows. Filesystem enforcement varies by operating system and process privileges, so deployment validation must exercise the actual service account and mount.
+
+If SQLite reports that the database or disk is full, the rejected statement does not count as accepted monitor ingress. Free or expand storage, preserve the database and sidecars, then reopen and inspect schema and reservoir state before resuming ingress. Do not delete WAL files to reclaim emergency space while a database may be live.
+
+### WAL I/O failure
+
+Failure to create or use the WAL sidecar may surface during startup or the first write. Stop the restart loop, preserve the primary database and any existing sidecars, and correct the directory, file-type, permission, or capacity problem. After correction, reopen normally and verify schema and row counts. Do not replace, truncate, or manually synthesize a WAL sidecar.
+
+### Corrupt or incompatible files
+
+Non-database, truncated, and structurally incompatible files fail closed. The monitor does not silently replace them or attempt automatic repair. Preserve the original files, stop writers, and recover from a verified backup or use qualified SQLite recovery tooling on a copy. Never run repair attempts against the only copy of accepted-event evidence.
+
+## Payload serialization and sizing
+
+Ingress events are stored as JSON with monitor-managed BigInt encoding. Ordinary objects, arrays, strings, numbers, booleans, nulls, Unicode, and BigInt values round-trip. Literal application objects whose keys resemble the internal BigInt encoding are escaped and restored rather than converted accidentally.
+
+Standard JSON transformations still apply: undefined object properties, functions, and symbols are omitted; undefined array entries become null; and non-finite numbers become null. Cyclic values and values too deeply nested for JSON serialization are rejected before the reservoir records acceptance.
+
+Repository validation covers representative payload bodies of 1 KiB, 64 KiB, and 1 MiB. These are compatibility examples, not a universal maximum or throughput guarantee. Set an application-owned payload limit based on outage duration, ingress rate, storage capacity, replay rate, and measured deployment behavior.
+
+Payloads are stored in the primary SQLite database and may also appear in WAL pages and backups. The monitor does not encrypt or redact application payloads. Applications and operators remain responsible for excluding secrets that should not be persisted and for applying appropriate filesystem, backup, and volume encryption controls.
+
+## Shutdown lifecycle
+
+`SQLiteReservoir.close()`, `MonitorRuntime.close()`, and `TransportMonitorAdapter.close()` are idempotent. Repeated close calls are safe and do not reopen or re-checkpoint a closed database.
+
+Once runtime shutdown begins, new ingress, health mutation, replay control, pruning, checkpointing, and database-backed inspection are rejected consistently. Cached configuration, schema identity, component-health evidence, replay evidence, recovery flags, reservoir path, and final in-memory pending count remain readable through the surfaces that already own those values. Treat cached post-close values as final local evidence, not as a live database inspection.
+
+If close overlaps an asynchronous delivery handler, the event may already be accepted in SQLite even though the in-flight adapter promise later rejects when it attempts acknowledgement. On restart, an unacknowledged ingress row remains pending, and an interrupted replay claim is reclaimed through normal restart recovery. Do not delete or re-create the database in response to the rejected promise; reopen and reconcile persisted state.
+
+Close still attempts a passive checkpoint, but crash correctness does not depend on that checkpoint. If the checkpoint reports an I/O error, close attempts to release the SQLite connection and surfaces the checkpoint error. Correct the storage condition and inspect the database before resuming service.
+
 ## Backup
 
 The supported file-copy procedure is stopped and checkpointed:

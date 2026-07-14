@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.3
+
+- added deterministic child-process crash characterization across 22 before/after append, claim, acknowledgement, retry, reclaim, prune, checkpoint, and close boundaries, preserving schema version 2, WAL recovery, row integrity, and restart replay eligibility
+- added storage-failure contracts for busy/locked writes, structured checkpoint contention, read-only access, deterministic full-storage rejection, WAL-sidecar failure, and corrupt or incompatible database files
+- added supported single-process concurrency contracts covering overlapping ingress, health changes, replay, inspection, pruning, checkpointing, a 300-event ordered replay stress run, and reopen-state verification
+- fixed payload decoding so literal application objects resembling the internal BigInt wrapper round-trip unchanged while previously persisted BigInt wrappers remain compatible
+- documented JSON transformations, rejection-before-acceptance behavior, representative 1 KiB, 64 KiB, and 1 MiB payload evidence, non-universal sizing responsibilities, and sensitive-data handling
+- made reservoir, runtime, and adapter close idempotent; made post-close mutable and database-backed operations fail consistently without adding a new exported error type
+- preserved accepted pending and replaying rows when shutdown overlaps asynchronous delivery, allowing normal restart recovery to reclaim and replay them in order
+- added an exact compatibility audit that protects v0.2.2 package subpaths, runtime exports, public class methods, configuration fields, result and snapshot shapes, and the unchanged schema-version-2 layout
+- added crash, storage-failure, concurrency, payload-boundary, shutdown-lifecycle, and exact compatibility contracts to default CI
+- expanded persistence operations guidance for lock contention, exhausted/read-only storage, WAL I/O failures, corruption response, payload serialization, and shutdown lifecycle
+
 ## v0.2.2
 
 - added the type-only `MonitorEventTimingEvidence` contract on the root and `@causal-order/monitor/types` surfaces so applications can consume event time, monitor-ingest time, observation time, signed lateness, and causal metadata without monitor defining business horizons or late-event policy

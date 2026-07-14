@@ -76,6 +76,8 @@ interface PruneBatchRow {
 }
 
 const BIGINT_SENTINEL = "__monitorBigInt";
+const ESCAPED_JSON_SENTINEL =
+  "__causalOrderMonitorInternalEscapedJsonV1__";
 
 const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
   id,
@@ -168,17 +170,52 @@ function parseBigInt(value: unknown): bigint {
 }
 
 function serializeJson(value: unknown): string {
-  return JSON.stringify(value, (_key, currentValue) =>
-    typeof currentValue === "bigint"
-      ? {
-          [BIGINT_SENTINEL]: currentValue.toString(),
-        }
-      : currentValue,
-  );
+  const generatedWrappers = new WeakSet<object>();
+  return JSON.stringify(value, (_key, currentValue) => {
+    if (typeof currentValue === "bigint") {
+      const wrapper = {
+        [BIGINT_SENTINEL]: currentValue.toString(),
+      };
+      generatedWrappers.add(wrapper);
+      return wrapper;
+    }
+
+    if (
+      currentValue &&
+      typeof currentValue === "object" &&
+      !Array.isArray(currentValue) &&
+      !generatedWrappers.has(currentValue) &&
+      (
+        Object.prototype.hasOwnProperty.call(currentValue, BIGINT_SENTINEL) ||
+        Object.prototype.hasOwnProperty.call(currentValue, ESCAPED_JSON_SENTINEL)
+      )
+    ) {
+      const wrapper = {
+        [ESCAPED_JSON_SENTINEL]: Object.entries(currentValue),
+      };
+      generatedWrappers.add(wrapper);
+      return wrapper;
+    }
+
+    return currentValue;
+  });
 }
 
 function deserializeJson<T>(value: string): T {
   return JSON.parse(value, (_key, currentValue) => {
+    if (
+      currentValue &&
+      typeof currentValue === "object" &&
+      Object.prototype.hasOwnProperty.call(
+        currentValue,
+        ESCAPED_JSON_SENTINEL,
+      ) &&
+      Object.keys(currentValue).length === 1 &&
+      Array.isArray(currentValue[ESCAPED_JSON_SENTINEL])
+    ) {
+      return Object.fromEntries(currentValue[ESCAPED_JSON_SENTINEL]);
+    }
+
     if (
       currentValue &&
       typeof currentValue === "object" &&
@@ -199,6 +236,7 @@ export class SQLiteReservoir {
   readonly #schemaInfo: MonitorSchemaInfo;
   readonly #appendIngressStatement: StatementSync;
   #pendingRowCount: number;
+  #closed = false;
 
   constructor(config: MonitorReservoirConfig, now: () => bigint) {
     this.#config = config;
@@ -239,6 +277,7 @@ export class SQLiteReservoir {
     event: MonitorIngressEvent,
     options: ReservoirIngressOptions,
   ): number {
+    this.#assertOpen("append an ingress event");
     const monitorIngestAt = options.monitorIngestAt ?? event.ingestedAt ?? this.#now();
     const retentionWindowMs = options.fullOutageActive
       ? this.#config.fullOutageMaxWindowMs
@@ -459,6 +498,7 @@ export class SQLiteReservoir {
   }
 
   reclaimStaleReplayRows(maxClaimAgeMs: bigint): number {
+    this.#assertOpen("reclaim stale replay rows");
     if (maxClaimAgeMs < 0n) {
       return 0;
     }
@@ -512,6 +552,7 @@ export class SQLiteReservoir {
   }
 
   pruneExpired(fullOutageActive = false): PruneResult {
+    this.#assertOpen("prune expired rows");
     const now = this.#now();
     const rollingWindowMs = fullOutageActive
       ? this.#config.fullOutageMaxWindowMs
@@ -641,8 +682,22 @@ export class SQLiteReservoir {
   }
 
   close(): void {
-    this.checkpointWal("passive");
+    if (this.#closed) {
+      return;
+    }
+
+    let checkpointError: unknown;
+    try {
+      this.checkpointWal("passive");
+    } catch (error) {
+      checkpointError = error;
+    }
+
     this.#db.close();
+    this.#closed = true;
+    if (checkpointError !== undefined) {
+      throw checkpointError;
+    }
   }
 
   #updateReplayRows(
@@ -650,6 +705,7 @@ export class SQLiteReservoir {
     nextState: ReservoirReplayState,
     retryNotBeforeMs?: bigint | null,
   ): number {
+    this.#assertOpen("update replay rows");
     if (rowIds.length === 0) {
       return 0;
     }
@@ -787,16 +843,19 @@ export class SQLiteReservoir {
   }
 
   #prepare(sql: string): StatementSync {
+    this.#assertOpen("access reservoir storage");
     return this.#db.prepare(sql);
   }
 
   #prepareReadBigInts(sql: string): StatementSync {
+    this.#assertOpen("read reservoir storage");
     const statement = this.#db.prepare(sql);
     statement.setReadBigInts(true);
     return statement;
   }
 
   #withTransaction<T>(work: () => T): T {
+    this.#assertOpen("run a reservoir transaction");
     this.#db.exec("BEGIN");
     try {
       const result = work();
@@ -806,6 +865,12 @@ export class SQLiteReservoir {
       this.#db.exec("ROLLBACK");
       this.#pendingRowCount = this.#readPendingRowCount();
       throw error;
+    }
+  }
+
+  #assertOpen(operation: string): void {
+    if (this.#closed) {
+      throw new Error(`Cannot ${operation} because SQLiteReservoir is closed.`);
     }
   }
 }

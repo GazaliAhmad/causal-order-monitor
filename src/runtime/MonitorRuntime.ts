@@ -64,6 +64,7 @@ export class MonitorRuntime {
   #recoveryReplayNeeded: boolean;
   #observedRecoveryTransition: boolean;
   #replayOwner: ReplayOrchestrationOwner | null;
+  #closed = false;
 
   constructor(config: Partial<MonitorConfig> = {}) {
     const defaults = createDefaultMonitorConfig();
@@ -141,6 +142,7 @@ export class MonitorRuntime {
   }
 
   getSnapshot(): MonitorSnapshot {
+    this.#assertOpen("read the monitor snapshot");
     const reservoir = this.getReservoirStats();
     return {
       generatedAt: this.#now(),
@@ -161,6 +163,7 @@ export class MonitorRuntime {
   }
 
   getReservoirStats(): ReservoirStats {
+    this.#assertOpen("read reservoir statistics");
     return this.#reservoir.getStats();
   }
 
@@ -169,12 +172,14 @@ export class MonitorRuntime {
   }
 
   getReservoirLifecycleStats(): ReservoirLifecycleStats {
+    this.#assertOpen("read reservoir lifecycle statistics");
     return this.#reservoir.getLifecycleStats();
   }
 
   checkpointReservoirWal(
     mode: WalCheckpointMode = "passive",
   ): WalCheckpointResult {
+    this.#assertOpen("checkpoint the reservoir WAL");
     return this.#reservoir.checkpointWal(mode);
   }
 
@@ -183,6 +188,7 @@ export class MonitorRuntime {
   }
 
   getIngressDecision(): MonitorIngressDecision {
+    this.#assertOpen("derive an ingress decision");
     const totalPendingRows = this.#reservoir.getPendingRowCount();
     const decision = this.#router.decideIngress(
       this.#deriveRoutingMode(totalPendingRows),
@@ -214,6 +220,7 @@ export class MonitorRuntime {
     component: MonitorComponent,
     update: MonitorHealthUpdate,
   ) {
+    this.#assertOpen("update component health");
     const previous = this.#healthTracker.getComponentSnapshot(component);
     const snapshot = this.#healthTracker.updateComponentHealth(component, update);
     this.#reservoir.recordHealthTransition(snapshot);
@@ -275,6 +282,7 @@ export class MonitorRuntime {
     observedAt = this.#now(),
     details: Record<string, unknown> = {},
   ) {
+    this.#assertOpen("observe a component heartbeat");
     const snapshot = this.#healthTracker.observeHeartbeat(
       component,
       observedAt,
@@ -291,11 +299,13 @@ export class MonitorRuntime {
   }
 
   setThrottleTier(tier: MonitorThrottleTier): MonitorThrottleTier {
+    this.#assertOpen("set the throttle tier");
     this.#throttleTier = tier;
     return this.#throttleTier;
   }
 
   bindReplayOrchestrationOwner(owner: ReplayOrchestrationOwner): ReplayOrchestrationOwner {
+    this.#assertOpen("bind replay orchestration ownership");
     if (this.#replayOwner !== null && this.#replayOwner !== owner) {
       throw new ReplayOwnershipError(
         "bind replay orchestration ownership",
@@ -318,6 +328,7 @@ export class MonitorRuntime {
   }
 
   startReplay(): ReplaySessionSnapshot {
+    this.#assertOpen("start replay");
     this.#assertReplayOwnership(
       "manual",
       "start replay manually",
@@ -328,6 +339,7 @@ export class MonitorRuntime {
   }
 
   claimManagedReplayBatch(limit = this.#config.throttle.verySlow.batchSize) {
+    this.#assertOpen("claim an adapter-managed replay batch");
     this.#assertReplayOwnership(
       "adapter",
       "claim an adapter-managed replay batch",
@@ -340,6 +352,7 @@ export class MonitorRuntime {
   acknowledgeManagedReplayBatch(
     rowIds: ReadonlyArray<number>,
   ): ReplaySessionSnapshot {
+    this.#assertOpen("acknowledge an adapter-managed replay batch");
     this.#assertReplayOwnership(
       "adapter",
       "acknowledge an adapter-managed replay batch",
@@ -353,6 +366,7 @@ export class MonitorRuntime {
     error: string,
     rowIds: ReadonlyArray<number> = [],
   ) {
+    this.#assertOpen("fail an adapter-managed replay session");
     this.#assertReplayOwnership(
       "adapter",
       "fail an adapter-managed replay session",
@@ -366,6 +380,7 @@ export class MonitorRuntime {
     reason: string,
     rowIds: ReadonlyArray<number> = [],
   ) {
+    this.#assertOpen("abort an adapter-managed replay session");
     this.#assertReplayOwnership(
       "adapter",
       "abort an adapter-managed replay session",
@@ -376,6 +391,7 @@ export class MonitorRuntime {
   }
 
   claimReplayBatch(limit = this.#config.throttle.verySlow.batchSize) {
+    this.#assertOpen("claim a manual replay batch");
     this.#assertReplayOwnership(
       "manual",
       "claim a manual replay batch",
@@ -386,6 +402,7 @@ export class MonitorRuntime {
   }
 
   acknowledgeReplayBatch(rowIds: ReadonlyArray<number>): ReplaySessionSnapshot {
+    this.#assertOpen("acknowledge a manual replay batch");
     this.#assertReplayOwnership(
       "manual",
       "acknowledge a manual replay batch",
@@ -396,10 +413,12 @@ export class MonitorRuntime {
   }
 
   acknowledgeIngressDelivery(rowIds: ReadonlyArray<number>): number {
+    this.#assertOpen("acknowledge ingress delivery");
     return this.#reservoir.markIngressRowsDelivered(rowIds);
   }
 
   failReplay(error: string, rowIds: ReadonlyArray<number> = []) {
+    this.#assertOpen("fail a manual replay session");
     this.#assertReplayOwnership(
       "manual",
       "fail a manual replay session",
@@ -410,6 +429,7 @@ export class MonitorRuntime {
   }
 
   abortReplay(reason: string, rowIds: ReadonlyArray<number> = []) {
+    this.#assertOpen("abort a manual replay session");
     this.#assertReplayOwnership(
       "manual",
       "abort a manual replay session",
@@ -423,6 +443,7 @@ export class MonitorRuntime {
     event: MonitorIngressEvent,
     sourceStreamId?: string | null,
   ): { rowId: number; decision: MonitorIngressDecision } {
+    this.#assertOpen("ingest a transport event");
     const decision = this.getIngressDecision();
     const rowId = this.#reservoir.appendIngressEvent(event, {
       sourcePath: "transport_normalized_stream",
@@ -437,6 +458,7 @@ export class MonitorRuntime {
     event: MonitorIngressEvent,
     sourceStreamId?: string | null,
   ): number {
+    this.#assertOpen("observe a dedupe event");
     return this.#reservoir.appendIngressEvent(event, {
       sourcePath: "deduped_observation",
       sourceStreamId,
@@ -447,11 +469,13 @@ export class MonitorRuntime {
   }
 
   pruneReservoir(): { markedDeadLetter: number; deletedRows: number } {
+    this.#assertOpen("prune the reservoir");
     this.#reservoir.reclaimStaleReplayRows(this.#config.replay.retryBackoffMs);
     return this.#reservoir.pruneExpired(this.#isFullOutageActive());
   }
 
   refreshHealthStates(at = this.#now()) {
+    this.#assertOpen("refresh health states");
     const before = this.#healthTracker.getSnapshot();
     const after = this.#healthTracker.refreshStates(at);
 
@@ -479,10 +503,18 @@ export class MonitorRuntime {
   }
 
   close(): void {
-    this.#reservoir.close();
+    if (this.#closed) {
+      return;
+    }
+    try {
+      this.#reservoir.close();
+    } finally {
+      this.#closed = true;
+    }
   }
 
   #queueReplayForOwner(owner: ReplayOrchestrationOwner): ReplaySessionSnapshot {
+    this.#assertOpen("queue replay");
     this.#assertReplayOwnership(
       owner,
       owner === "adapter" ? "queue adapter-managed replay" : "queue replay manually",
@@ -505,6 +537,7 @@ export class MonitorRuntime {
   }
 
   #claimReplayBatchInternal(limit = this.#config.throttle.verySlow.batchSize) {
+    this.#assertOpen("claim a replay batch");
     if (!this.#areReplayTargetsHealthy()) {
       throw new Error(
         "Cannot claim replay batch until both dedupe and causal-order are online.",
@@ -621,6 +654,12 @@ export class MonitorRuntime {
         owner,
         mismatchGuidance,
       );
+    }
+  }
+
+  #assertOpen(operation: string): void {
+    if (this.#closed) {
+      throw new Error(`Cannot ${operation} because MonitorRuntime is closed.`);
     }
   }
 }
