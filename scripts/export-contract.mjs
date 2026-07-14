@@ -177,6 +177,12 @@ const rootAndSubpathChecks = [
     subpathLabel: "@causal-order/monitor/inspect",
   },
   {
+    exportName: "inspectMonitorSnapshotV1",
+    rootModule: root,
+    subpathModule: inspect,
+    subpathLabel: "@causal-order/monitor/inspect",
+  },
+  {
     exportName: "createMonitorRuntime",
     rootModule: root,
     subpathModule: runtime,
@@ -261,6 +267,16 @@ assertOwnExport(root, "SQLiteReservoir", "@causal-order/monitor");
 assertOwnExport(root, "ThrottleController", "@causal-order/monitor");
 assertOwnExport(root, "TransportMonitorAdapter", "@causal-order/monitor");
 assertOwnExport(root, "ReplayOwnershipError", "@causal-order/monitor");
+for (const exportName of [
+  "MonitorAdmissionRefusedError",
+  "MonitorBoundaryError",
+  "MonitorClosedError",
+  "MonitorIndeterminateOutcomeError",
+  "classifyMonitorBoundaryFailure",
+  "deriveMonitorAdmissionDecision",
+]) {
+  assertOwnExport(root, exportName, "@causal-order/monitor");
+}
 
 for (const exportName of [
   "MONITOR_SQLITE_SCHEMA_VERSION",

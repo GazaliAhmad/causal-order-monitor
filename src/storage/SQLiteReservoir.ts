@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statfsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
@@ -10,9 +10,14 @@ import type {
 } from "../types/events.js";
 import type {
   MonitorComponentHealthSnapshot,
+  MonitorStorageSnapshotV1,
   ReplaySessionSnapshot,
   ReservoirStats,
 } from "../types/snapshots.js";
+import {
+  MonitorClosedError,
+  toMonitorBoundaryError,
+} from "../boundary.js";
 import {
   applyMonitorSchema,
   MonitorSchemaError,
@@ -287,7 +292,9 @@ export class SQLiteReservoir {
       options.replayState ??
       (options.sourcePath === "deduped_observation" ? "delivered" : "pending");
 
-    const result = this.#appendIngressStatement.run({
+    let result: ReturnType<StatementSync["run"]>;
+    try {
+      result = this.#appendIngressStatement.run({
       id: event.id,
       monitor_ingest_at_ms: toSqlBigInt(monitorIngestAt),
       source_node_id: event.nodeId,
@@ -312,7 +319,10 @@ export class SQLiteReservoir {
           ? toSqlBigInt(monitorIngestAt)
           : null,
       expires_at_ms: toSqlBigInt(expiresAt),
-    });
+      });
+    } catch (error) {
+      throw toMonitorBoundaryError(error, "append an ingress event");
+    }
 
     if (replayState === "pending" || replayState === "replaying") {
       this.#pendingRowCount += 1;
@@ -681,6 +691,62 @@ export class SQLiteReservoir {
     return this.#config.databasePath;
   }
 
+  getStorageSnapshot(): MonitorStorageSnapshotV1 {
+    this.#assertOpen("read reservoir storage statistics");
+    if (this.#config.databasePath === ":memory:") {
+      return {
+        pressure: "unknown",
+        databaseBytes: null,
+        walBytes: null,
+        filesystemAvailableBytes: null,
+        filesystemTotalBytes: null,
+        filesystemUsedPercent: null,
+      };
+    }
+
+    try {
+      const databasePath = normalizeDatabasePath(this.#config.databasePath);
+      const databaseBytes = existsSync(databasePath)
+        ? statSync(databasePath, { bigint: true }).size
+        : 0n;
+      const walPath = `${databasePath}-wal`;
+      const walBytes = existsSync(walPath)
+        ? statSync(walPath, { bigint: true }).size
+        : 0n;
+      const filesystem = statfsSync(dirname(databasePath), { bigint: true });
+      const availableBytes = filesystem.bavail * filesystem.bsize;
+      const totalBytes = filesystem.blocks * filesystem.bsize;
+      const usedPercent = totalBytes === 0n
+        ? null
+        : Number(((totalBytes - availableBytes) * 10_000n) / totalBytes) / 100;
+      const availablePercent = usedPercent === null ? null : 100 - usedPercent;
+      const pressure = availablePercent === null
+        ? "unknown"
+        : availablePercent <= 5
+          ? "critical"
+          : availablePercent <= 15
+            ? "elevated"
+            : "normal";
+      return {
+        pressure,
+        databaseBytes: databaseBytes.toString(),
+        walBytes: walBytes.toString(),
+        filesystemAvailableBytes: availableBytes.toString(),
+        filesystemTotalBytes: totalBytes.toString(),
+        filesystemUsedPercent: usedPercent,
+      };
+    } catch {
+      return {
+        pressure: "unknown",
+        databaseBytes: null,
+        walBytes: null,
+        filesystemAvailableBytes: null,
+        filesystemTotalBytes: null,
+        filesystemUsedPercent: null,
+      };
+    }
+  }
+
   close(): void {
     if (this.#closed) {
       return;
@@ -870,7 +936,7 @@ export class SQLiteReservoir {
 
   #assertOpen(operation: string): void {
     if (this.#closed) {
-      throw new Error(`Cannot ${operation} because SQLiteReservoir is closed.`);
+      throw new MonitorClosedError(operation);
     }
   }
 }

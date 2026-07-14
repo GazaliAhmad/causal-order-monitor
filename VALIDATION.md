@@ -23,6 +23,9 @@ Individual checks are available through:
 - `npm run test:http-thresholds-8nodes`
 - `npm run test:inspect-snapshot`
 - `npm run test:monotonic-now`
+- `npm run test:operator-snapshot-contract`
+- `npm run test:boundary-contract`
+- `npm run test:snapshot-query-plan-contract`
 - `npm run test:no-healthy-replay`
 - `npm run test:payload-boundary-contract`
 - `npm run test:prune-batching`

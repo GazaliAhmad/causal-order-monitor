@@ -82,3 +82,95 @@ export interface InspectedMonitorSnapshot {
   replayConsecutiveFailureCount: number;
   replayRetryBackoffActive: boolean;
 }
+
+/** Stable schema identifier for the first JSON-safe operator snapshot. */
+export type MonitorOperatorSnapshotSchema =
+  "causal-order-monitor/operator-snapshot";
+
+export type MonitorOperatorComponent =
+  | MonitorComponent
+  | "reservoir"
+  | "replay";
+
+export type MonitorOperatorStatus =
+  | "healthy"
+  | "degraded"
+  | "buffering"
+  | "recovering"
+  | "attention_required"
+  | "protective_refusal";
+
+export type MonitorRecommendedAction =
+  | "none"
+  | "restore_affected_components"
+  | "wait_for_retry"
+  | "monitor_replay"
+  | "inspect_replay_failure"
+  | "relieve_protective_pressure"
+  | "free_local_storage"
+  | "stop_and_inspect_storage";
+
+export type MonitorAdmissionPosture =
+  | "accepted_live"
+  | "accepted_buffered"
+  | "protective_refusal";
+
+export type MonitorAdmissionReasonCode =
+  | "MONITOR_LIVE_FLOW_AVAILABLE"
+  | "MONITOR_OUTAGE_BUFFERING"
+  | "MONITOR_RECOVERY_GATE_BUFFERING"
+  | "MONITOR_PROTECTIVE_THROTTLE";
+
+export interface MonitorAdmissionSnapshotV1 {
+  posture: MonitorAdmissionPosture;
+  accepted: boolean;
+  httpStatus: 202 | 503;
+  reasonCode: MonitorAdmissionReasonCode;
+}
+
+export type MonitorStoragePressure =
+  | "normal"
+  | "elevated"
+  | "critical"
+  | "unknown";
+
+/** Decimal strings are used for byte and millisecond values to remain JSON-safe. */
+export interface MonitorStorageSnapshotV1 {
+  pressure: MonitorStoragePressure;
+  databaseBytes: string | null;
+  walBytes: string | null;
+  filesystemAvailableBytes: string | null;
+  filesystemTotalBytes: string | null;
+  filesystemUsedPercent: number | null;
+}
+
+export interface MonitorOperatorSnapshotV1 {
+  schema: MonitorOperatorSnapshotSchema;
+  version: 1;
+  generatedAtMs: string;
+  status: MonitorOperatorStatus;
+  affectedComponents: MonitorOperatorComponent[];
+  recommendedAction: MonitorRecommendedAction;
+  routingMode: MonitorRoutingMode;
+  throttleTier: MonitorThrottleTier;
+  admission: MonitorAdmissionSnapshotV1;
+  backlog: {
+    totalRows: number;
+    readyRows: number;
+    retryWaitingRows: number;
+    oldestAgeMs: string;
+    earliestRetryAtMs: string | null;
+  };
+  replay: {
+    state: MonitorReplaySessionState;
+    gateClosed: boolean;
+    backlogRemainingRows: number;
+    queuedEventCount: number;
+    deliveredEventCount: number;
+    progressPercent: number | null;
+    consecutiveFailureCount: number;
+    nextRetryAtMs: string | null;
+    retryDelayMs: string | null;
+  };
+  storage: MonitorStorageSnapshotV1;
+}

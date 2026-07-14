@@ -1,4 +1,4 @@
-export const monitorPackageVersion = "0.2.3";
+export const monitorPackageVersion = "0.3.0";
 
 export type MonitorImplementationStatus = "replay_operational";
 
@@ -70,8 +70,32 @@ export {
   type MonitorSnapshot,
   type ReplaySessionSnapshot,
   type ReservoirStats,
+  type MonitorAdmissionSnapshotV1,
+  type MonitorOperatorComponent,
+  type MonitorOperatorSnapshotSchema,
+  type MonitorOperatorSnapshotV1,
+  type MonitorOperatorStatus,
+  type MonitorRecommendedAction,
+  type MonitorStoragePressure,
+  type MonitorStorageSnapshotV1,
 } from "./types/snapshots.js";
-export { inspectMonitorSnapshot } from "./inspect/inspectMonitorSnapshot.js";
+export {
+  inspectMonitorSnapshot,
+  inspectMonitorSnapshotV1,
+} from "./inspect/inspectMonitorSnapshot.js";
+export {
+  classifyMonitorBoundaryFailure,
+  deriveMonitorAdmissionDecision,
+  MonitorAdmissionRefusedError,
+  MonitorBoundaryError,
+  MonitorClosedError,
+  MonitorIndeterminateOutcomeError,
+  type MonitorAdmissionDecision,
+  type MonitorBoundaryErrorCode,
+  type MonitorBoundaryFailure,
+  type MonitorBoundaryOutcome,
+  type MonitorBoundaryRecommendedAction,
+} from "./boundary.js";
 export {
   createMonitorRuntime,
   createMonitorRuntimeFromEnvironment,

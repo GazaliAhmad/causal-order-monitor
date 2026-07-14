@@ -3,7 +3,14 @@ import {
   type MonitorConfig,
 } from "../types/config.js";
 import { HealthTracker } from "../health/HealthTracker.js";
-import { inspectMonitorSnapshot } from "../inspect/inspectMonitorSnapshot.js";
+import {
+  inspectMonitorSnapshot,
+  inspectMonitorSnapshotV1,
+} from "../inspect/inspectMonitorSnapshot.js";
+import {
+  MonitorAdmissionRefusedError,
+  MonitorClosedError,
+} from "../boundary.js";
 import { DeliveryRouter } from "../routing/DeliveryRouter.js";
 import { ReplayCoordinator } from "../replay/ReplayCoordinator.js";
 import {
@@ -24,6 +31,7 @@ import type {
 } from "../types/events.js";
 import type {
   InspectedMonitorSnapshot,
+  MonitorOperatorSnapshotV1,
   MonitorSnapshot,
   ReplaySessionSnapshot,
   ReservoirStats,
@@ -156,6 +164,13 @@ export class MonitorRuntime {
 
   getInspectedSnapshot(): InspectedMonitorSnapshot {
     return inspectMonitorSnapshot(this.getSnapshot());
+  }
+
+  getOperatorSnapshot(): MonitorOperatorSnapshotV1 {
+    return inspectMonitorSnapshotV1(
+      this.getSnapshot(),
+      this.#reservoir.getStorageSnapshot(),
+    );
   }
 
   getHealthSnapshot() {
@@ -445,6 +460,9 @@ export class MonitorRuntime {
   ): { rowId: number; decision: MonitorIngressDecision } {
     this.#assertOpen("ingest a transport event");
     const decision = this.getIngressDecision();
+    if (decision.action === "pause") {
+      throw new MonitorAdmissionRefusedError(decision);
+    }
     const rowId = this.#reservoir.appendIngressEvent(event, {
       sourcePath: "transport_normalized_stream",
       sourceStreamId,
@@ -659,7 +677,7 @@ export class MonitorRuntime {
 
   #assertOpen(operation: string): void {
     if (this.#closed) {
-      throw new Error(`Cannot ${operation} because MonitorRuntime is closed.`);
+      throw new MonitorClosedError(operation);
     }
   }
 }

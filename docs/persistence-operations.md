@@ -1,6 +1,6 @@
 # Persistence Operations
 
-This guide covers the supported SQLite lifecycle for `@causal-order/monitor` v0.2.2. The live database must be on a writable, host-local filesystem owned by one monitor process.
+This guide covers the supported SQLite lifecycle for `@causal-order/monitor`. The live database must be on a writable, host-local filesystem owned by one monitor process.
 
 ## Retention and cleanup
 
@@ -21,6 +21,10 @@ File-backed reservoirs use WAL journaling and `synchronous=FULL`. `reservoir.wal
 ## Storage failure handling
 
 The monitor does not hide SQLite storage failures or convert a rejected write into an accepted event. Operators should correct the underlying storage condition before retrying or restarting repeatedly.
+
+`classifyMonitorBoundaryFailure()` maps recognized contention, full-storage, read-only, and I/O failures to stable codes without making SQLite message text contractual. `MonitorClosedError` identifies definite post-close rejection. `MonitorIndeterminateOutcomeError` means a row was already persisted but later adapter delivery or acknowledgement did not complete observably; reconcile the row from monitor storage instead of blindly retrying or assuming delivery.
+
+`getOperatorSnapshot().storage` uses bounded file and filesystem metadata reads. It does not run `PRAGMA integrity_check` or scan ingress rows. Available capacity of 5% or less is classified `critical`; 15% or less is `elevated`; more is `normal`. In-memory databases and unavailable metadata report `unknown`. These levels are package operational signals, not substitutes for deployment-specific volume alerts.
 
 ### Busy and locked databases
 

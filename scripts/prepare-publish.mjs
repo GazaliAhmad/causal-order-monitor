@@ -19,15 +19,19 @@ const replacements = [
   },
   {
     path: new URL("../README.md", import.meta.url),
-    description: "README release markers",
+    description: "README repository development version",
     update(source) {
       let next = source.replace(
         /Status: `v[^`]+` published to npm\./,
         `Status: \`v${version}\` published to npm.`,
       );
       next = next.replace(
-        /Published version: `v[^`]+`\./,
-        `Published version: \`v${version}\`.`,
+        /Current repository development version: `v[^`]+`/,
+        `Current repository development version: \`v${version}\``,
+      );
+      next = next.replace(
+        /`v[^`]+` is not currently published to npm\./,
+        `\`v${version}\` is not currently published to npm.`,
       );
       next = next.replace(/## Version `v[^`]+`/, `## Version \`v${version}\``);
       return next;

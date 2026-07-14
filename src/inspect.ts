@@ -1,1 +1,4 @@
-export { inspectMonitorSnapshot } from "./inspect/inspectMonitorSnapshot.js";
+export {
+  inspectMonitorSnapshot,
+  inspectMonitorSnapshotV1,
+} from "./inspect/inspectMonitorSnapshot.js";

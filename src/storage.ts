@@ -6,6 +6,7 @@ export {
   type WalCheckpointMode,
   type WalCheckpointResult,
 } from "./storage/SQLiteReservoir.js";
+export type { MonitorStorageSnapshotV1 } from "./types/snapshots.js";
 export {
   MONITOR_SQLITE_SCHEMA_VERSION,
   MonitorSchemaCompatibilityError,
