@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.2.2` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
+This file records the `v0.2.3` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -17,9 +17,10 @@ This file records the `v0.2.2` release baseline for `@causal-order/monitor` whil
 
 ## Current Release
 
-- Status: `v0.2.2` is the current published npm release.
-- The `v0.2.2` package completes the persistence-lifecycle phase with bounded terminal retention, explicit WAL lifecycle controls, and tested persistence operations while preserving the `v0.2.1` recovery contract.
-- `v0.2.2` adds the type-only `MonitorEventTimingEvidence` handoff at the root and `/types` entrypoints so applications can receive event time, monitor-ingest time, observation time, signed lateness, and causal metadata without monitor prescribing business policy.
+- Status: `v0.2.3` is the current published npm release.
+- The `v0.2.3` package hardens crash, storage-failure, concurrency, serialization, and shutdown boundaries while keeping the v0.2.2 public surface and SQLite schema version 2 unchanged.
+- `v0.2.3` corrects literal BigInt-sentinel payload handling, makes close idempotent, defines post-close behavior, and gates the failure-boundary contracts in default CI.
+- The policy-neutral `MonitorEventTimingEvidence` handoff remains available at the root and `/types` entrypoints without monitor prescribing business policy.
 - The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 
 ## Package Intent
@@ -50,7 +51,7 @@ Its role is to:
 
 `@causal-order/persistence` may independently provide SQLite as one adapter for persistence-owned concerns such as WALs, checkpoints, and component state. The two packages may therefore both use SQLite, but they own separate data, schemas, lifecycles, and APIs. A persistence SQLite adapter does not absorb the monitor reservoir, and no future consolidation should be inferred without a separate explicit architecture decision.
 
-The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.3.0. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
+The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.2.3. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
 
 It is not meant to be:
 
@@ -265,7 +266,7 @@ Acceptance results:
 - runtime behavior remains stable while API posture gets stricter
 - future breaking cleanup, if any, can start from a warning phase that was validated directly instead of inferred from documentation alone
 
-## Phase 2: Persistence Lifecycle and Upgrade Safety (`v0.2.x`)
+## Phase 2: Persistence Lifecycle and Upgrade Safety (`v0.2.0`–`v0.2.2`)
 
 Turn the monitor's SQLite format from an implementation detail into a supported upgrade contract.
 
@@ -312,11 +313,15 @@ Exit criteria:
 - interrupted migration or startup cannot silently discard or strand accepted events
 - operators can identify the active schema version and follow a documented recovery procedure
 
-## Phase 3: Crash, Storage, and Concurrency Hardening (Target: `v0.3.0`)
+## Phase 3: Crash, Storage, and Concurrency Hardening (Target: `v0.2.3`)
 
 Prove deterministic behavior at the failure boundaries most likely to damage recovery confidence.
 
-This phase hardens the standalone monitor. It does not introduce `@causal-order/persistence` integration, a shared `recoveryEventId`, cross-store reconciliation, persistence-candidate admission, or a `StateHydrator` handoff. Those changes begin with the first persistence-integration milestone and must not be introduced incidentally during v0.3.0 hardening.
+Status: complete in `v0.2.3`.
+
+This phase hardens the standalone monitor. It does not introduce `@causal-order/persistence` integration, a shared `recoveryEventId`, cross-store reconciliation, persistence-candidate admission, or a `StateHydrator` handoff. Those changes begin with the first persistence-integration milestone and must not be introduced incidentally during v0.2.3 hardening.
+
+`v0.2.3` is patch-scoped: it may add tests, documentation, and backward-compatible corrections, but it does not add public exports, result shapes, configuration fields, schema changes, or snapshot fields. If hardening proves that a new public boundary contract is required, that contract belongs in `v0.3.0` rather than being forced into this patch.
 
 - exercise process termination and restart during append, replay claim, acknowledgement, retry, reclaim, and prune operations
 - validate busy/locked databases, disk-full behavior, read-only paths, WAL failures, corrupt files, and actionable startup errors
@@ -329,14 +334,24 @@ Exit criteria:
 
 - accepted rows retain a documented terminal outcome across every tested crash point
 - replay ownership and ordering invariants hold under concurrent pressure
-- storage failures produce explicit boundary results or typed errors rather than ambiguous partial success
+- storage failures fail deterministically through the existing public contracts rather than producing ambiguous partial success
 - crash and storage hardening do not turn monitor timing evidence into company-specific business policy
 
-## Phase 4: Versioned Operator Contract (Target: `v0.4.0`)
+Delivered in `v0.2.3`:
+
+- 22 deterministic before/after process-termination boundaries preserve exact row state, schema version 2, WAL integrity, and restart replay eligibility
+- busy/locked, read-only, full-storage, WAL-sidecar, corruption, and incompatible-schema failures reject without ambiguous accepted rows
+- deterministic async interleavings and a 300-event stress/reopen run preserve replay ownership, monitor-ingest ordering, gating, and lifecycle counts
+- payload boundaries document JSON behavior and representative sizes; literal BigInt-sentinel-shaped application objects now round-trip while legacy BigInt rows remain readable
+- close is idempotent, post-close mutable/database work rejects consistently, and in-flight ingress/replay rows remain recoverable after restart
+- exact compatibility auditing protects package exports, class methods, config/result/snapshot shapes, and the unchanged schema layout
+
+## Phase 4: Versioned Operator and Boundary Contracts (Target: `v0.3.0`)
 
 Stabilize the inspection model as a machine-consumable operational API.
 
 - version the inspected snapshot schema and keep it JSON-safe
+- introduce any new public boundary-result or typed-error taxonomy justified by `v0.2.3` characterization
 - expose deterministic overall status, affected components, backlog age, replay progress, storage pressure, and recommended action
 - distinguish contained buffering (`202`) from protective refusal (`503`) without requiring callers to infer posture from raw counters
 - guarantee bounded snapshot query cost with indexed aggregation and regression benchmarks
@@ -347,8 +362,9 @@ Exit criteria:
 - all operational states map to stable status and action semantics
 - snapshot generation uses a bounded number of indexed database reads
 - compatibility tests protect the versioned snapshot contract
+- compatibility tests protect new public boundary and error contracts
 
-## Phase 5: Stack Integration and Artifact Contracts (Target: `v0.5.0`)
+## Phase 5: Stack Integration and Artifact Contracts (Target: `v0.4.0`)
 
 Validate the monitor as the recovery layer for the real causal-order package stack, not only as a repository-local library.
 
@@ -364,7 +380,7 @@ Exit criteria:
 - the supported peer-version matrix is explicit and continuously exercised
 - the reference integration completes the full failure and recovery lifecycle without repository source imports
 
-## Phase 6: Performance and Soak Qualification (Target: `v0.6.0`)
+## Phase 6: Performance and Soak Qualification (Target: `v0.5.0`)
 
 - establish repeatable ingress, replay, prune, startup, and inspection benchmarks
 - run long-duration healthy-flow, extended-outage, reconnect-burst, and repeated-recovery soak contracts
@@ -378,7 +394,7 @@ Exit criteria:
 - performance regressions are detectable from repeatable baselines
 - documented sizing guidance connects ingress rate, outage duration, disk capacity, and replay rate
 
-## Phase 7: API Convergence and Compatibility Policy (Target: `v0.7.0`)
+## Phase 7: API Convergence and Compatibility Policy (Target: `v0.6.0`)
 
 - audit every root export, subpath, adapter result, configuration field, snapshot field, routing mode, reason code, and error type
 - define semantic-versioning rules for TypeScript types, config defaults, peer dependencies, subpaths, snapshots, and the SQLite schema
@@ -392,10 +408,17 @@ Exit criteria:
 - all removals have tested migration guidance
 - the intended `v1` root and subpath surfaces are explicit contract fixtures
 
-## Phase 8: Platform and Operations Readiness (Target: `v0.8.0`)
+## Phase 8: Platform Qualification (Target: `v0.7.0`)
 
 - declare the supported Node.js and operating-system matrix
 - run packed-artifact tests across the supported platform matrix
+
+Exit criteria:
+
+- supported platforms pass the same core recovery contracts
+
+## Phase 9: Operations and Release Readiness (Target: `v0.8.0`)
+
 - complete deployment, storage, upgrade, troubleshooting, and incident-response documentation
 - verify npm provenance, package contents, licenses, peer dependency guidance, and reproducible release checks
 - conduct a security and data-handling review of persisted payloads and operator evidence
@@ -404,9 +427,11 @@ Exit criteria:
 
 - a new operator can deploy, inspect, upgrade, back up, restore, and troubleshoot the monitor from published documentation
 - release automation rejects incomplete or mismatched package metadata
-- supported platforms pass the same core recovery contracts
+- persisted payload and operator-evidence responsibilities are documented and reviewed
 
-## Phase 9: Release Candidate Burn-in (Target: `v0.9.0`)
+## Phase 10: v1 Readiness Burn-in (Target: `v0.9.0`)
+
+`v0.9.0` is a normal pre-1 release, not a SemVer pre-release identifier. If final `v1.0.0` artifacts require candidate publication, use `v1.0.0-rc.N` only for those actual candidates; no release-candidate sequence is preallocated.
 
 - freeze avoidable feature work and treat the public API and schema as release candidates
 - exercise fresh install, upgrade from every supported schema, crash recovery, prolonged outage, and downgrade-rejection paths
@@ -416,7 +441,7 @@ Exit criteria:
 
 Exit criteria:
 
-- the release candidate completes the full validation matrix without unresolved critical defects
+- the v1 readiness release completes the full validation matrix without unresolved critical defects
 - no breaking public API or persistence redesign is planned for `v1.0.0`
 - release evidence is reproducible from documented commands
 
@@ -424,7 +449,7 @@ Exit criteria:
 
 Publish `v1.0.0` only when the monitor can make a durable compatibility and recovery promise to production consumers.
 
-- Phases 1 through 9 are complete and their required suites run in CI
+- Phases 1 through 10 are complete and their required suites run in CI
 - the public API, subpaths, configuration, operator snapshot, routing/reason codes, and error model are stable
 - the SQLite schema is versioned, supported migrations are transactional, and restart/crash recovery is proven
 - replay always follows the documented dedupe path and preserves ownership, gating, retry, and ordering invariants

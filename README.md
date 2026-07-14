@@ -30,7 +30,7 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Stability
 
-Published version: `v0.2.2`.
+Published version: `v0.2.3`.
 
 ## When To Use It
 
@@ -229,6 +229,8 @@ When a pending row ages out, it transitions to `dead_letter` and starts its own 
 ## Schema Compatibility
 
 `v0.2.0` established SQLite schema version 1 as an explicit persistence contract. `v0.2.1` added deterministic restart and upgrade recovery. `v0.2.2` migrates that format to schema version 2 so terminal evidence retention can be measured from the delivered or dead-letter transition.
+
+`v0.2.3` keeps schema version 2 and the v0.2.2 public surface unchanged while hardening crash, storage-failure, concurrency, payload-serialization, and shutdown behavior. Close is idempotent, post-close mutable work is rejected consistently, and accepted rows remain recoverable when shutdown overlaps delivery.
 
 - new reservoirs record their schema version during transactional initialization
 - compatible unversioned databases created by earlier monitor releases migrate transactionally without discarding rows

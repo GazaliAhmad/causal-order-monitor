@@ -15,17 +15,23 @@ The default CI contract includes both 10,000-row threshold and retention/admissi
 Individual checks are available through:
 
 - `npm run check`
+- `npm run test:compatibility-audit`
 - `npm run test:config-env-resolution`
+- `npm run test:concurrency-contract`
+- `npm run test:crash-boundary-contract`
 - `npm run test:export-contract`
 - `npm run test:http-thresholds-8nodes`
 - `npm run test:inspect-snapshot`
 - `npm run test:monotonic-now`
 - `npm run test:no-healthy-replay`
+- `npm run test:payload-boundary-contract`
 - `npm run test:prune-batching`
 - `npm run test:replay-ownership-guard`
 - `npm run test:retention-admission-contract`
 - `npm run test:runtime-bootstrap`
 - `npm run test:schema-compatibility`
+- `npm run test:shutdown-lifecycle-contract`
+- `npm run test:storage-failure-contract`
 - `npm run test:terminal-retention-contract`
 - `npm run test:wal-lifecycle-contract`
 - `npm run test:backup-restore-contract`
