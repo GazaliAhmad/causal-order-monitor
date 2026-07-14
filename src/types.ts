@@ -34,4 +34,12 @@ export {
   type MonitorSnapshot,
   type ReplaySessionSnapshot,
   type ReservoirStats,
+  type MonitorAdmissionSnapshotV1,
+  type MonitorOperatorComponent,
+  type MonitorOperatorSnapshotSchema,
+  type MonitorOperatorSnapshotV1,
+  type MonitorOperatorStatus,
+  type MonitorRecommendedAction,
+  type MonitorStoragePressure,
+  type MonitorStorageSnapshotV1,
 } from "./types/snapshots.js";

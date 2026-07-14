@@ -14,9 +14,15 @@ import type {
 } from "../types/events.js";
 import type {
   InspectedMonitorSnapshot,
+  MonitorOperatorSnapshotV1,
   MonitorSnapshot,
   ReplaySessionSnapshot,
 } from "../types/snapshots.js";
+import {
+  deriveMonitorAdmissionDecision,
+  type MonitorAdmissionDecision,
+  MonitorIndeterminateOutcomeError,
+} from "../boundary.js";
 
 export interface MonitorAdapterForwardContext {
   rowId: number;
@@ -52,6 +58,7 @@ export interface MonitorAdapterHandlers {
 export interface MonitorIngestResult {
   rowId: number;
   decision: MonitorIngressDecision;
+  admission: MonitorAdmissionDecision;
   forwardedTo: "dedupe" | "causal-order" | "buffer";
 }
 
@@ -85,6 +92,10 @@ export class TransportMonitorAdapter {
 
   getInspectedSnapshot(): InspectedMonitorSnapshot {
     return this.#runtime.getInspectedSnapshot();
+  }
+
+  getOperatorSnapshot(): MonitorOperatorSnapshotV1 {
+    return this.#runtime.getOperatorSnapshot();
   }
 
   getReplaySnapshot(): ReplaySessionSnapshot {
@@ -122,19 +133,37 @@ export class TransportMonitorAdapter {
       event,
       sourceStreamId,
     );
-    await this.#handlers.onDecision?.(event, decision, rowId);
+    const admission = deriveMonitorAdmissionDecision(decision);
+    try {
+      await this.#handlers.onDecision?.(event, decision, rowId);
 
-    if (decision.action === "buffer_only" || decision.action === "pause") {
-      await this.#handlers.onBuffered?.(event, decision, rowId);
-      return {
-        rowId,
-        decision,
-        forwardedTo: "buffer",
-      };
-    }
+      if (decision.action === "buffer_only" || decision.action === "pause") {
+        await this.#handlers.onBuffered?.(event, decision, rowId);
+        return {
+          rowId,
+          decision,
+          admission,
+          forwardedTo: "buffer",
+        };
+      }
 
-    if (decision.deliveryMode === "dedupe_bypass") {
-      await this.#handlers.deliverToOrder(event, {
+      if (decision.deliveryMode === "dedupe_bypass") {
+        await this.#handlers.deliverToOrder(event, {
+          rowId,
+          sourceStreamId: sourceStreamId ?? null,
+          deliveryMode: decision.deliveryMode,
+          replay: false,
+        });
+        this.#runtime.acknowledgeIngressDelivery([rowId]);
+        return {
+          rowId,
+          decision,
+          admission,
+          forwardedTo: "causal-order",
+        };
+      }
+
+      await this.#handlers.deliverToDedupe(event, {
         rowId,
         sourceStreamId: sourceStreamId ?? null,
         deliveryMode: decision.deliveryMode,
@@ -144,22 +173,16 @@ export class TransportMonitorAdapter {
       return {
         rowId,
         decision,
-        forwardedTo: "causal-order",
+        admission,
+        forwardedTo: "dedupe",
       };
+    } catch (error) {
+      throw new MonitorIndeterminateOutcomeError(
+        "complete adapter ingress delivery",
+        rowId,
+        error,
+      );
     }
-
-    await this.#handlers.deliverToDedupe(event, {
-      rowId,
-      sourceStreamId: sourceStreamId ?? null,
-      deliveryMode: decision.deliveryMode,
-      replay: false,
-    });
-    this.#runtime.acknowledgeIngressDelivery([rowId]);
-    return {
-      rowId,
-      decision,
-      forwardedTo: "dedupe",
-    };
   }
 
   async pumpReplayBatch(limit?: number): Promise<ReplayPumpResult> {

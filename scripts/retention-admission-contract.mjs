@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { TransportMonitorAdapter } from "../.build/src/index.js";
+import {
+  MonitorAdmissionRefusedError,
+  TransportMonitorAdapter,
+} from "../.build/src/index.js";
 
 const SIX_HOURS_MS = 6n * 60n * 60n * 1000n;
 
@@ -175,6 +178,22 @@ async function runProtectiveStopContractScenario() {
     assert.equal(pauseDecision.action, "pause");
     assert.equal(toHttpStatus(pauseDecision), 503);
     assert.notEqual(toHttpStatus(pauseDecision), 429);
+    const pendingBeforeRefusal = adapter.getRuntime().getReservoirStats().totalPendingRows;
+    assert.throws(
+      () => adapter.getRuntime().ingestTransportEvent(
+        createEvent("protective-refusal", nowMs + 10_001n),
+      ),
+      (error) => {
+        assert.ok(error instanceof MonitorAdmissionRefusedError);
+        assert.equal(error.code, "ERR_MONITOR_ADMISSION_REFUSED");
+        assert.equal(error.httpStatus, 503);
+        return true;
+      },
+    );
+    assert.equal(
+      adapter.getRuntime().getReservoirStats().totalPendingRows,
+      pendingBeforeRefusal,
+    );
   } finally {
     adapter.close();
     rmSync(workspace, { recursive: true, force: true });

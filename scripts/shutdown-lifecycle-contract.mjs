@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  MonitorClosedError,
+  MonitorIndeterminateOutcomeError,
   MonitorRuntime,
   SQLiteReservoir,
   TransportMonitorAdapter,
@@ -70,8 +72,12 @@ function setHealthy(adapter, observedAt = 100_000n) {
   }
 }
 
-function assertClosed(action, owner) {
-  assert.throws(action, new RegExp(`${owner} is closed`, "i"));
+function assertClosed(action) {
+  assert.throws(action, (error) => {
+    assert.ok(error instanceof MonitorClosedError);
+    assert.equal(error.code, "ERR_MONITOR_CLOSED");
+    return true;
+  });
 }
 
 function testReservoirPostClose(root) {
@@ -125,8 +131,9 @@ function testReservoirPostClose(root) {
     () => reservoir.checkpointWal("passive"),
     () => reservoir.getLifecycleStats(),
     () => reservoir.getStats(),
+    () => reservoir.getStorageSnapshot(),
   ];
-  for (const operation of operations) assertClosed(operation, "SQLiteReservoir");
+  for (const operation of operations) assertClosed(operation);
 }
 
 function testRuntimePostClose(root) {
@@ -155,6 +162,7 @@ function testRuntimePostClose(root) {
   const operations = [
     () => runtime.getSnapshot(),
     () => runtime.getInspectedSnapshot(),
+    () => runtime.getOperatorSnapshot(),
     () => runtime.getReservoirStats(),
     () => runtime.getReservoirLifecycleStats(),
     () => runtime.checkpointReservoirWal("passive"),
@@ -180,7 +188,7 @@ function testRuntimePostClose(root) {
     () => runtime.pruneReservoir(),
     () => runtime.refreshHealthStates(),
   ];
-  for (const operation of operations) assertClosed(operation, "MonitorRuntime");
+  for (const operation of operations) assertClosed(operation);
 }
 
 async function testCloseDuringIngressDelivery(root) {
@@ -200,7 +208,12 @@ async function testCloseDuringIngressDelivery(root) {
   adapter.close();
   adapter.close();
   gate.release();
-  await assert.rejects(inFlight, /MonitorRuntime is closed/i);
+  await assert.rejects(inFlight, (error) => {
+    assert.ok(error instanceof MonitorIndeterminateOutcomeError);
+    assert.equal(error.code, "ERR_MONITOR_OUTCOME_INDETERMINATE");
+    assert.ok(error.cause instanceof MonitorClosedError);
+    return true;
+  });
 
   const reopened = new MonitorRuntime(config(databasePath));
   try {
@@ -246,7 +259,11 @@ async function testCloseDuringReplayDelivery(root) {
   assert.equal(adapter.getSnapshot().reservoir.totalPendingRows, 2);
   adapter.close();
   gate.release();
-  await assert.rejects(inFlight, /MonitorRuntime is closed/i);
+  await assert.rejects(inFlight, (error) => {
+    assert.ok(error instanceof MonitorClosedError);
+    assert.equal(error.code, "ERR_MONITOR_CLOSED");
+    return true;
+  });
 
   const reopened = new MonitorRuntime(config(databasePath));
   try {

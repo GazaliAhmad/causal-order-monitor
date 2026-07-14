@@ -49,6 +49,10 @@ assert.deepEqual(ownKeys(rootModule), sorted([
   "DeliveryRouter",
   "HealthTracker",
   "MONITOR_CONFIG_ENV_VAR",
+  "MonitorAdmissionRefusedError",
+  "MonitorBoundaryError",
+  "MonitorClosedError",
+  "MonitorIndeterminateOutcomeError",
   "MonitorRuntime",
   "ReplayCoordinator",
   "ReplayOwnershipError",
@@ -62,7 +66,10 @@ assert.deepEqual(ownKeys(rootModule), sorted([
   "createMonitorRuntimeFromFile",
   "createTransportMonitorAdapterFromEnvironment",
   "createTransportMonitorAdapterFromFile",
+  "classifyMonitorBoundaryFailure",
+  "deriveMonitorAdmissionDecision",
   "inspectMonitorSnapshot",
+  "inspectMonitorSnapshotV1",
   "loadMonitorConfigFile",
   "loadMonitorConfigFromEnvironment",
   "monitorHarnessArtifacts",
@@ -85,11 +92,17 @@ assert.deepEqual(ownKeys(configModule), sorted([
   "resolveMonitorConfigFromEnvironment",
 ]));
 assert.deepEqual(ownKeys(runtimeModule), sorted([
+  "MonitorAdmissionRefusedError",
+  "MonitorBoundaryError",
+  "MonitorClosedError",
+  "MonitorIndeterminateOutcomeError",
   "MonitorRuntime",
   "ReplayOwnershipError",
   "createMonitorRuntime",
   "createMonitorRuntimeFromEnvironment",
   "createMonitorRuntimeFromFile",
+  "classifyMonitorBoundaryFailure",
+  "deriveMonitorAdmissionDecision",
 ]));
 assert.deepEqual(ownKeys(storageModule), sorted([
   "MONITOR_SQLITE_SCHEMA_VERSION",
@@ -100,9 +113,12 @@ assert.deepEqual(ownKeys(storageModule), sorted([
   "SQLiteReservoir",
 ]));
 assert.deepEqual(ownKeys(transportModule), sorted([
+  "MonitorAdmissionRefusedError",
+  "MonitorIndeterminateOutcomeError",
   "TransportMonitorAdapter",
   "createTransportMonitorAdapterFromEnvironment",
   "createTransportMonitorAdapterFromFile",
+  "deriveMonitorAdmissionDecision",
 ]));
 
 assert.deepEqual(prototypeMethods(storageModule.SQLiteReservoir), sorted([
@@ -117,6 +133,7 @@ assert.deepEqual(prototypeMethods(storageModule.SQLiteReservoir), sorted([
   "getPendingRowCount",
   "getSchemaInfo",
   "getStats",
+  "getStorageSnapshot",
   "markIngressRowsDelivered",
   "markReplayBatchDelivered",
   "pruneExpired",
@@ -144,6 +161,7 @@ assert.deepEqual(prototypeMethods(runtimeModule.MonitorRuntime), sorted([
   "getHealthSnapshot",
   "getIngressDecision",
   "getInspectedSnapshot",
+  "getOperatorSnapshot",
   "getReplaySnapshot",
   "getReservoirLifecycleStats",
   "getReservoirStats",
@@ -166,6 +184,7 @@ assert.deepEqual(prototypeMethods(runtimeModule.MonitorRuntime), sorted([
 assert.deepEqual(prototypeMethods(transportModule.TransportMonitorAdapter), sorted([
   "close",
   "getInspectedSnapshot",
+  "getOperatorSnapshot",
   "getReplaySnapshot",
   "getRuntime",
   "getSnapshot",
@@ -258,6 +277,54 @@ try {
     "totalPendingRows",
     "unhealthyComponents",
   ]));
+  const operatorSnapshot = runtime.getOperatorSnapshot();
+  assert.deepEqual(ownKeys(operatorSnapshot), sorted([
+    "admission",
+    "affectedComponents",
+    "backlog",
+    "generatedAtMs",
+    "recommendedAction",
+    "replay",
+    "routingMode",
+    "schema",
+    "status",
+    "storage",
+    "throttleTier",
+    "version",
+  ]));
+  assert.deepEqual(ownKeys(operatorSnapshot.admission), [
+    "accepted",
+    "httpStatus",
+    "posture",
+    "reasonCode",
+  ]);
+  assert.deepEqual(ownKeys(operatorSnapshot.backlog), [
+    "earliestRetryAtMs",
+    "oldestAgeMs",
+    "readyRows",
+    "retryWaitingRows",
+    "totalRows",
+  ]);
+  assert.deepEqual(ownKeys(operatorSnapshot.replay), [
+    "backlogRemainingRows",
+    "consecutiveFailureCount",
+    "deliveredEventCount",
+    "gateClosed",
+    "nextRetryAtMs",
+    "progressPercent",
+    "queuedEventCount",
+    "retryDelayMs",
+    "state",
+  ]);
+  assert.deepEqual(ownKeys(operatorSnapshot.storage), [
+    "databaseBytes",
+    "filesystemAvailableBytes",
+    "filesystemTotalBytes",
+    "filesystemUsedPercent",
+    "pressure",
+    "walBytes",
+  ]);
+  assert.doesNotThrow(() => JSON.stringify(operatorSnapshot));
   assert.deepEqual(ownKeys(runtime.getReservoirLifecycleStats()), [
     "deadLetterRows",
     "deliveredRows",
@@ -309,5 +376,5 @@ try {
 }
 
 console.log(
-  "compatibility audit passed: v0.2.2 exports, class methods, config/result/snapshot shapes, and schema-v2 columns remain unchanged",
+  "compatibility audit passed: inherited v0.2.3 contracts plus exact v0.3.0 operator exports, methods, shapes, and schema-v2 layout are protected",
 );

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.0
+
+- added the discriminated `causal-order-monitor/operator-snapshot` version 1 contract through runtime and adapter `getOperatorSnapshot()` methods plus the pure `inspectMonitorSnapshotV1()` projection
+- made the complete versioned operator snapshot JSON-safe by representing millisecond and byte quantities as decimal strings while preserving the existing unversioned BigInt inspection surface
+- exposed stable overall status, affected components, recommended action, admission posture, backlog age, replay progress, and bounded database/WAL/filesystem storage-pressure evidence
+- added explicit admission semantics: accepted live and buffered work maps to `202`, while protective refusal throws `MonitorAdmissionRefusedError` before persistence and maps to `503`
+- added stable boundary codes and JSON-safe classification for shutdown, SQLite contention, full storage, read-only storage, I/O failure, and persisted-but-unobserved adapter completion
+- made post-close work throw `MonitorClosedError` and made asynchronous adapter completion failures after persistence throw `MonitorIndeterminateOutcomeError` with the accepted row identity for storage reconciliation
+- added a four-query snapshot cost contract proving the existing reservoir aggregations remain index-backed at a representative 1,000-row backlog without payload materialization, integrity checks, or schema changes
+- added exact export, prototype, snapshot-shape, admission, boundary, query-plan, shutdown, and compatibility coverage to default CI while preserving SQLite schema version 2
+- added operator runbooks for outage buffering, protective refusal, retry wait, replay, terminal failure, storage pressure/failure, restart recovery, indeterminate completion, and shutdown
+
 ## v0.2.3
 
 - added deterministic child-process crash characterization across 22 before/after append, claim, acknowledgement, retry, reclaim, prune, checkpoint, and close boundaries, preserving schema version 2, WAL recovery, row integrity, and restart replay eligibility

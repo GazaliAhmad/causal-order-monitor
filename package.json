@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -106,7 +106,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:export-contract && npm run test:compatibility-audit && npm run test:schema-compatibility && npm run test:crash-boundary-contract && npm run test:storage-failure-contract && npm run test:restart-state-contract && npm run test:upgrade-restart-contract && npm run test:terminal-retention-contract && npm run test:wal-lifecycle-contract && npm run test:backup-restore-contract && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run test:concurrency-contract && npm run test:payload-boundary-contract && npm run test:shutdown-lifecycle-contract && npm run pack:check",
+    "ci": "npm run check && npm run test:export-contract && npm run test:compatibility-audit && npm run test:operator-snapshot-contract && npm run test:boundary-contract && npm run test:snapshot-query-plan-contract && npm run test:schema-compatibility && npm run test:crash-boundary-contract && npm run test:storage-failure-contract && npm run test:restart-state-contract && npm run test:upgrade-restart-contract && npm run test:terminal-retention-contract && npm run test:wal-lifecycle-contract && npm run test:backup-restore-contract && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run test:concurrency-contract && npm run test:payload-boundary-contract && npm run test:shutdown-lifecycle-contract && npm run pack:check",
     "harness:monitor": "npm run build && node scripts/run-monitor-harness.mjs",
     "harness:order-outage": "npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 20m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-local",
     "prepack": "npm run publish:prepare && npm run build",
@@ -140,6 +140,9 @@
     "test:terminal-retention-contract": "npm run build && node scripts/terminal-retention-contract.mjs",
     "test:wal-lifecycle-contract": "npm run build && node scripts/wal-lifecycle-contract.mjs",
     "test:backup-restore-contract": "npm run build && node scripts/backup-restore-contract.mjs",
+    "test:operator-snapshot-contract": "npm run build && node scripts/operator-snapshot-contract.mjs",
+    "test:boundary-contract": "npm run build && node scripts/boundary-contract.mjs",
+    "test:snapshot-query-plan-contract": "npm run build && node scripts/snapshot-query-plan-contract.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
   },
   "peerDependencies": {

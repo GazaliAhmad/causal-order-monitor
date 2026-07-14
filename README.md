@@ -28,9 +28,13 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 - replays buffered backlog through `@causal-order/dedupe` after recovery
 - exposes snapshots and derived inspection state for operators and automation
 
-## Stability
+## Version Status
 
-Published version: `v0.2.3`.
+- Latest published npm version: `v0.2.3`
+- Current repository development version: `v0.3.0`
+- `v0.3.0` is not currently published to npm.
+
+Running `npm install @causal-order/monitor` installs `v0.2.3` from the npm registry. The repository may contain newer tagged development versions that have not been published to npm.
 
 ## When To Use It
 
@@ -208,6 +212,8 @@ That means:
 
 - if the event was accepted into the monitor, even if it was only buffered in SQLite, the ingress contract should return `202`
 - if the monitor is refusing admission because it is in a true protective stop state, the ingress contract should return `503`
+
+`TransportMonitorAdapter.ingest()` returns an `admission` object for accepted work. Its `posture`, `accepted`, `httpStatus`, and `reasonCode` fields make the distinction explicit. A protective refusal throws `MonitorAdmissionRefusedError` before a row is persisted; it has code `ERR_MONITOR_ADMISSION_REFUSED` and `httpStatus: 503`.
 
 The current monitor semantics do not use `429 Too Many Requests` for ordinary buffering or protective-stop behavior.
 
@@ -467,8 +473,23 @@ For raw state, use:
 
 For operator-facing state, use:
 
+- `getOperatorSnapshot()` for the stable JSON-safe v1 contract
 - `getInspectedSnapshot()`
+- `inspectMonitorSnapshotV1(snapshot, storage?)`
 - `inspectMonitorSnapshot(snapshot)`
+
+The preferred machine-consumable contract is `getOperatorSnapshot()`. It is discriminated by:
+
+```json
+{
+  "schema": "causal-order-monitor/operator-snapshot",
+  "version": 1
+}
+```
+
+All millisecond and byte quantities in this versioned contract are decimal strings, so the complete value can be passed through `JSON.stringify()` without a BigInt replacer. It exposes stable overall status, affected components, recommended action, admission posture, backlog age, replay progress, and bounded filesystem storage facts. The older inspected snapshot remains available as a compatibility surface and continues to use BigInt values.
+
+Filesystem pressure is classified from bounded filesystem metadata: at most 5% available is `critical`, at most 15% is `elevated`, and greater than 15% is `normal`. In-memory databases or unavailable filesystem metadata report `unknown`; no integrity check or table scan is performed.
 
 The inspected snapshot is the easiest entry point when you want a quick read on:
 
@@ -558,6 +579,7 @@ These remain part of the `v0.2.2` public compatibility contract and continue to 
 - [Roadmap](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/ROADMAP.md)
 - [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
 - [Persistence operations](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/persistence-operations.md)
+- [Operator runbook](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/operator-runbook.md)
 
 ## License
 
