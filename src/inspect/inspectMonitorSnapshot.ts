@@ -57,6 +57,10 @@ function deriveLiveFlowGateReason(
     return "replay backlog is draining";
   }
 
+  if (snapshot.replay.state === "failed") {
+    return "replay failure is awaiting retry";
+  }
+
   if (snapshot.replay.state === "completed") {
     return "post-replay health confirmation is still in progress";
   }
@@ -222,12 +226,12 @@ export function inspectMonitorSnapshotV1(
   } else if (protectiveRefusal) {
     status = "protective_refusal";
     recommendedAction = "relieve_protective_pressure";
-  } else if (snapshot.replay.state === "failed" || snapshot.replay.state === "aborted") {
-    status = "attention_required";
-    recommendedAction = "inspect_replay_failure";
   } else if (inspected.replayRetryBackoffActive) {
     status = "recovering";
     recommendedAction = "wait_for_retry";
+  } else if (snapshot.replay.state === "failed" || snapshot.replay.state === "aborted") {
+    status = "attention_required";
+    recommendedAction = "inspect_replay_failure";
   } else if (
     snapshot.replay.state === "queued" ||
     snapshot.replay.state === "running" ||

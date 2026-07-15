@@ -30,11 +30,11 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Version Status
 
-- Latest published npm version: `v0.2.3`
-- Current repository development version: `v0.3.0`
-- `v0.3.0` is not currently published to npm.
+- Latest published npm version: `v0.3.1`
+- Current repository development version: `v0.3.1`
+- Status: `v0.3.1` published to npm.
 
-Running `npm install @causal-order/monitor` installs `v0.2.3` from the npm registry. The repository may contain newer tagged development versions that have not been published to npm.
+Running `npm install @causal-order/monitor` installs `v0.3.1` from the npm registry.
 
 ## When To Use It
 
@@ -490,6 +490,8 @@ The preferred machine-consumable contract is `getOperatorSnapshot()`. It is disc
 All millisecond and byte quantities in this versioned contract are decimal strings, so the complete value can be passed through `JSON.stringify()` without a BigInt replacer. It exposes stable overall status, affected components, recommended action, admission posture, backlog age, replay progress, and bounded filesystem storage facts. The older inspected snapshot remains available as a compatibility surface and continues to use BigInt values.
 
 Filesystem pressure is classified from bounded filesystem metadata: at most 5% available is `critical`, at most 15% is `elevated`, and greater than 15% is `normal`. In-memory databases or unavailable filesystem metadata report `unknown`; no integrity check or table scan is performed.
+
+During replay failure, an active retry deadline reports `status: "recovering"` with `recommendedAction: "wait_for_retry"`. After that deadline passes, the snapshot reports `status: "attention_required"` with `recommendedAction: "inspect_replay_failure"`; the recovery gate remains closed and admission remains accepted-buffered until replay resumes or the retained backlog is reconciled.
 
 The inspected snapshot is the easiest entry point when you want a quick read on:
 
