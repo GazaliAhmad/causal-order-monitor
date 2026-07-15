@@ -49,6 +49,7 @@ try {
     });
   }
 
+  const liveRawSnapshot = adapter.getSnapshot();
   const liveSnapshot = adapter.getOperatorSnapshot();
   assertJsonSafe(liveSnapshot);
   assert.equal(typeof liveSnapshot.storage.databaseBytes, "string");
@@ -73,6 +74,36 @@ try {
   });
   assert.equal(typeof snapshot.generatedAtMs, "string");
   assertJsonSafe(snapshot);
+
+  const expiredRetrySnapshot = inspectMonitorSnapshotV1({
+    ...liveRawSnapshot,
+    generatedAt: 20_000n,
+    routingMode: "replay_through_dedupe",
+    reservoir: {
+      ...liveRawSnapshot.reservoir,
+      totalPendingRows: 1,
+      oldestPendingAgeMs: 10_000n,
+      pendingRowsByDeliveryMode: { order_buffer: 1 },
+    },
+    replay: {
+      ...liveRawSnapshot.replay,
+      state: "failed",
+      queuedEventCount: 1,
+      endedAt: 15_000n,
+      lastError: "downstream delivery failed",
+      nextRetryAt: 19_000n,
+      consecutiveFailureCount: 1,
+    },
+  }, snapshot.storage);
+  assert.equal(expiredRetrySnapshot.status, "attention_required");
+  assert.equal(expiredRetrySnapshot.replay.gateClosed, true);
+  assert.deepEqual(expiredRetrySnapshot.admission, {
+    posture: "accepted_buffered",
+    accepted: true,
+    httpStatus: 202,
+    reasonCode: "MONITOR_RECOVERY_GATE_BUFFERING",
+  });
+  assertJsonSafe(expiredRetrySnapshot);
 
   adapter.updateComponentHealth("causal-order", {
     state: "offline",

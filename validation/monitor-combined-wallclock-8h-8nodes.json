@@ -1,0 +1,72 @@
+{
+  "schema": "causal-order-monitor/sanitized-combined-wallclock-validation",
+  "version": 1,
+  "status": "passed",
+  "monitorVersion": "0.3.1",
+  "timing": {
+    "startedAt": "2026-07-14T14:34:54.022Z",
+    "finishedAt": "2026-07-14T22:34:55.991Z",
+    "wallElapsedMs": 28801969,
+    "simulatedElapsedMs": 28800000,
+    "sleepOrProlongedStallDetected": false
+  },
+  "configuration": {
+    "nodeCount": 8,
+    "eventsPerSecond": 15,
+    "duplicateRate": 0.01,
+    "jitterMs": 250,
+    "timeScale": 1,
+    "maxLoopGapMs": 30000
+  },
+  "outcome": {
+    "generatedEmissions": 431999,
+    "generatedUniqueEvents": 427737,
+    "generatedDuplicateEmissions": 4262,
+    "acceptedByMonitor": 431999,
+    "refusedBeforePersistence": 0,
+    "indeterminateFailures": 0,
+    "orderUniqueEvents": 427737,
+    "replayFailures": 0,
+    "upstreamHeld": 112320,
+    "upstreamReleased": 112320,
+    "buffered": 302400,
+    "replayDeliveriesThroughDedupe": 302400,
+    "maximumPendingRows": 25926,
+    "maximumUpstreamQueue": 34560,
+    "finalUpstreamQueue": 0,
+    "finalPendingRows": 0,
+    "finalRetryWaitingRows": 0,
+    "finalReplayState": "idle"
+  },
+  "resources": {
+    "maximumRssBytes": 132829184,
+    "maximumHeapUsedBytes": 54033992,
+    "maximumDatabaseBytes": 305483776,
+    "maximumWalBytes": 4420792,
+    "filesystemTotalBytes": 510392602624,
+    "filesystemAvailableBytes": 19375439872,
+    "filesystemUsedPercent": 96.2
+  },
+  "finalOperatorPosture": {
+    "status": "attention_required",
+    "affectedComponents": [
+      "reservoir"
+    ],
+    "recommendedAction": "free_local_storage",
+    "routingMode": "normal",
+    "throttleTier": "very_slow",
+    "admission": {
+      "posture": "accepted_live",
+      "accepted": true,
+      "httpStatus": 202,
+      "reasonCode": "MONITOR_LIVE_FLOW_AVAILABLE"
+    },
+    "storagePressure": "critical"
+  },
+  "scope": {
+    "faultPhases": "healthy plus individual, paired, and triple transport/dedupe/causal-order outages with recovery",
+    "downstreamHandlers": "simulated",
+    "provesRealDownstreamOrderingCorrectness": false,
+    "physicalDiskExhaustedToZeroBytes": false
+  }
+}

@@ -22,6 +22,10 @@ const replacements = [
     description: "README repository development version",
     update(source) {
       let next = source.replace(
+        /Latest published npm version: `v[^`]+`/,
+        `Latest published npm version: \`v${version}\``,
+      );
+      next = next.replace(
         /Status: `v[^`]+` published to npm\./,
         `Status: \`v${version}\` published to npm.`,
       );
@@ -31,7 +35,11 @@ const replacements = [
       );
       next = next.replace(
         /`v[^`]+` is not currently published to npm\./,
-        `\`v${version}\` is not currently published to npm.`,
+        `Status: \`v${version}\` published to npm.`,
+      );
+      next = next.replace(
+        /Running `npm install @causal-order\/monitor` installs `v[^`]+` from the npm registry\.(?: The repository may contain newer tagged development versions that have not been published to npm\.)?/,
+        `Running \`npm install @causal-order/monitor\` installs \`v${version}\` from the npm registry.`,
       );
       next = next.replace(/## Version `v[^`]+`/, `## Version \`v${version}\``);
       return next;

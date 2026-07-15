@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.3.0` release baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
+This file records the `v0.3.1` repository hardening baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -17,8 +17,8 @@ This file records the `v0.3.0` release baseline for `@causal-order/monitor` whil
 
 ## Current Release
 
-- Status: `v0.3.0` is the current repository release candidate; npm publication and registry verification remain external release steps.
-- The `v0.3.0` package adds a versioned JSON-safe operator snapshot with stable status, affected-component, recommended-action, admission, replay, backlog, and storage-pressure semantics.
+- Status: `v0.3.1` is the current published npm release.
+- The `v0.3.1` package hardens the versioned JSON-safe operator snapshot by making active retry-wait and expired failed-replay gate mappings agree with documented runtime behavior.
 - Stable boundary errors classify shutdown, storage contention/capacity/access/I/O failures, protective refusal, and persisted-but-unobserved adapter completion without weakening SQLite recovery authority.
 - Snapshot generation retains four fixed index-backed reservoir aggregations and SQLite schema version 2.
 - The policy-neutral `MonitorEventTimingEvidence` handoff remains available at the root and `/types` entrypoints without monitor prescribing business policy.
@@ -52,7 +52,7 @@ Its role is to:
 
 `@causal-order/persistence` may independently provide SQLite as one adapter for persistence-owned concerns such as WALs, checkpoints, and component state. The two packages may therefore both use SQLite, but they own separate data, schemas, lifecycles, and APIs. A persistence SQLite adapter does not absorb the monitor reservoir, and no future consolidation should be inferred without a separate explicit architecture decision.
 
-The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.3.0. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
+The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.3.1. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
 
 It is not meant to be:
 
@@ -375,6 +375,16 @@ Delivered in `v0.3.0`:
 - stable shutdown, storage failure, and indeterminate-observation boundary taxonomy
 - four fixed index-backed reservoir aggregation queries with representative query-plan regression coverage
 - operator runbooks and exact public compatibility gates
+
+### v0.3.1 contract-correctness hardening
+
+Status: published in npm release v0.3.1.
+
+- active replay backoff maps to `recovering` with `wait_for_retry`
+- expired failed replay remains visibly recovery-gated and uses `MONITOR_RECOVERY_GATE_BUFFERING`
+- a table-driven edge-state contract protects 13 operator status, action, gate, admission, affected-component, storage-pressure, and JSON mappings
+- tracked eight-hour 1x evidence covers all eight-node single, paired, and triple fault phases, complete recovery and drain, bounded resources, and correct `attention_required / free_local_storage` reporting on a `96.2%`-used physical filesystem
+- the v0.3.0 public shape, stable codes, schema version 2, and recovery invariants remain unchanged
 
 ## Phase 5: Stack Integration and Artifact Contracts (Target: `v0.4.0`)
 

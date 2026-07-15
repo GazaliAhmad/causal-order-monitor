@@ -24,6 +24,7 @@ Individual checks are available through:
 - `npm run test:inspect-snapshot`
 - `npm run test:monotonic-now`
 - `npm run test:operator-snapshot-contract`
+- `npm run test:operator-edge-state-contract`
 - `npm run test:boundary-contract`
 - `npm run test:snapshot-query-plan-contract`
 - `npm run test:no-healthy-replay`
@@ -67,6 +68,23 @@ The operational suites are:
 - `npm run test:monitor-operational-smoke` — uses an 8-node default topology and a short scenario subset for CI and repeatable smoke confidence.
 - `npm run test:monitor-operational-full` — uses an 8-node default topology and the broader monitor scenario set for production-shaped validation.
 
+Run the dedicated eight-hour combined fault-cycle validation in a separate PowerShell window with:
+
+```powershell
+npm run test:monitor-combined-wallclock -- --duration 8h --time-scale 1 --node-ids edge-a,edge-b,edge-c,edge-d,edge-e,edge-f,edge-g,edge-h
+```
+
+This repository-local soak cycles through healthy operation; individual transport, dedupe, and causal-order failures; all three two-component combinations; a triple outage; and final recovery. Transport-offline emissions are held in an explicit upstream retry queue because monitor cannot persist events it has not received. The run records jitter, intentional duplicates, routing/operator postures, replay-through-dedupe, final drain, RSS/heap, database/WAL size, and threshold failures in `artifacts/validation/monitor-combined-wallclock-8h-8nodes.json`.
+
+Keep the host awake for the complete run. By default, a real loop gap longer than 30 seconds fails the validation so system sleep or a prolonged process stall cannot be counted silently as continuous wall-clock evidence.
+
+The completed v0.3.1 eight-hour run is preserved as tracked, sanitized evidence in:
+
+- `validation/monitor-combined-wallclock-8h-8nodes.json`
+- `validation/monitor-combined-wallclock-8h-8nodes.md`
+
+The run passed every fault phase, delivered all `427737` generated unique events to the simulated order sink, released all `112320` transport-held emissions, replayed all `302400` buffered deliveries through dedupe, and ended with zero backlog and idle replay. The host filesystem was `96.2%` used with approximately `18.0 GiB` available. Monitor correctly retained `attention_required / free_local_storage` and critical storage pressure while the recovered path returned to normal accepted-live HTTP `202` behavior. This is designed storage-warning evidence, not a claim that operation with zero free bytes was tested.
+
 ## Threshold Contract
 
 `npm run test:http-thresholds-8nodes` runs a deterministic 8-node wall-clock simulation proving:
@@ -81,3 +99,8 @@ Tracked evidence for the overnight 8-node wall-clock dual-outage run is stored i
 
 - `validation/monitor-dual-outage-8h-wallclock-8nodes.json`
 - `validation/monitor-dual-outage-8h-wallclock-8nodes.md`
+
+Tracked evidence for the v0.3.1 eight-node combined single/paired/triple fault-cycle run is stored in:
+
+- `validation/monitor-combined-wallclock-8h-8nodes.json`
+- `validation/monitor-combined-wallclock-8h-8nodes.md`

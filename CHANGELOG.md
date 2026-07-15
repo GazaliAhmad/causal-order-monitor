@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.1
+
+- fixed active replay backoff so the documented `recovering` and `wait_for_retry` operator posture is reachable instead of being masked by terminal-failure precedence
+- fixed expired failed-replay inspection so the live-flow recovery gate remains reported as closed and accepted buffering uses `MONITOR_RECOVERY_GATE_BUFFERING` until replay resumes or backlog is reconciled
+- added a table-driven operator edge-state contract covering 13 healthy, degraded, buffering, recovery, retry, failure, refusal, and storage-pressure mappings with JSON round-trip validation
+- added a configurable eight-node combined wall-clock validation runner that cycles individual, paired, and triple transport/dedupe/causal-order failures, models transport-owned retry explicitly, checks replay-through-dedupe and final drain, and records resource/storage evidence
+- completed and preserved the eight-hour 1x combined fault-cycle evidence: all `427737` unique events reached the simulated order sink, all held and buffered work drained, resource limits held, and a `96.2%`-used physical filesystem correctly remained `attention_required / free_local_storage` without hiding recovery or causing an indeterminate outcome
+- preserved the complete v0.3.0 operator snapshot shape, stable enums and reason codes, boundary taxonomy, SQLite schema version 2, and inherited recovery behavior
+
 ## v0.3.0
 
 - added the discriminated `causal-order-monitor/operator-snapshot` version 1 contract through runtime and adapter `getOperatorSnapshot()` methods plus the pure `inspectMonitorSnapshotV1()` projection
