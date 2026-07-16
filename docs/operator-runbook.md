@@ -37,7 +37,7 @@ The corresponding recommended action is `relieve_protective_pressure`.
 1. Inspect `replay.nextRetryAtMs`, `replay.retryDelayMs`, and `replay.consecutiveFailureCount`.
 2. Keep live flow gated when `replay.gateClosed` is true.
 3. When the retry deadline passes before replay resumes, expect `status: "attention_required"` with `recommendedAction: "inspect_replay_failure"`; the recovery gate remains closed and new accepted work remains buffered.
-3. Correct the last known downstream fault, then wait until the deadline rather than starting competing replay control.
+4. Correct the last known downstream fault, then wait until the deadline rather than starting competing replay control.
 
 ## Active replay and recovery confirmation
 
