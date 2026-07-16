@@ -386,6 +386,18 @@ Status: published in npm release v0.3.1.
 - tracked eight-hour 1x evidence covers all eight-node single, paired, and triple fault phases, complete recovery and drain, bounded resources, and correct `attention_required / free_local_storage` reporting on a `96.2%`-used physical filesystem
 - the v0.3.0 public shape, stable codes, schema version 2, and recovery invariants remain unchanged
 
+### v0.3.2 bounded-inspection and storage-pressure hardening
+
+Status: complete in the repository v0.3.2 release candidate.
+
+- exact integer byte-ratio classification protects the 5% critical and 15% elevated boundaries without using rounded display percentages
+- 12 deterministic fixtures cover exact and adjacent thresholds plus invalid filesystem metadata
+- database and WAL byte evidence is exercised across create, write, checkpoint, close, and reopen
+- four fixed index-backed reservoir aggregations remain bounded from empty state through 10,000 pending rows
+- operator inspection overlaps ingress, replay, pruning, checkpointing, and stress/reopen validation without adding atomic-observation promises
+- schema version 2, public snapshot v1, stable codes, replay/recovery invariants, and exact compatibility remain unchanged
+- deployment quotas, cross-process ownership, stack integration, and soak qualification remain outside this patch
+
 ## Phase 5: Stack Integration and Artifact Contracts (Target: `v0.4.0`)
 
 Validate the monitor as the recovery layer for the real causal-order package stack, not only as a repository-local library.

@@ -15,6 +15,14 @@ const reservoir = new SQLiteReservoir(
 );
 
 try {
+  const createdStorage = reservoir.getStorageSnapshot();
+  assert.equal(createdStorage.pressure === "unknown", false);
+  assert.ok(BigInt(createdStorage.databaseBytes) > 0n);
+  assert.ok(BigInt(createdStorage.walBytes) >= 0n);
+  assert.ok(BigInt(createdStorage.filesystemAvailableBytes) >= 0n);
+  assert.ok(BigInt(createdStorage.filesystemTotalBytes) > 0n);
+  assert.equal(typeof createdStorage.filesystemUsedPercent, "number");
+
   for (let i = 0; i < 200; i += 1) {
     reservoir.appendIngressEvent({
       id: `wal-${i}`,
@@ -25,6 +33,12 @@ try {
   }
   assert.ok(existsSync(`${databasePath}-wal`));
   assert.ok(statSync(`${databasePath}-wal`).size > 0);
+  const writtenStorage = reservoir.getStorageSnapshot();
+  assert.ok(BigInt(writtenStorage.databaseBytes) >= BigInt(createdStorage.databaseBytes));
+  assert.equal(
+    writtenStorage.walBytes,
+    statSync(`${databasePath}-wal`, { bigint: true }).size.toString(),
+  );
   const passive = reservoir.checkpointWal("passive");
   assert.equal(passive.mode, "passive");
   assert.equal(typeof passive.busy, "boolean");
@@ -37,9 +51,24 @@ try {
     checkpointedFrames: 0,
   });
   assert.equal(statSync(`${databasePath}-wal`).size, 0);
+  const checkpointedStorage = reservoir.getStorageSnapshot();
+  assert.equal(checkpointedStorage.walBytes, "0");
 } finally {
   reservoir.close();
+}
+
+const reopened = new SQLiteReservoir(
+  { ...defaults.reservoir, databasePath, walAutoCheckpointPages: 25 },
+  () => 2_000n,
+);
+try {
+  const reopenedStorage = reopened.getStorageSnapshot();
+  assert.ok(BigInt(reopenedStorage.databaseBytes) > 0n);
+  assert.ok(BigInt(reopenedStorage.walBytes) >= 0n);
+  assert.equal(reopened.getPendingRowCount(), 200);
+} finally {
+  reopened.close();
   rmSync(workspace, { recursive: true, force: true });
 }
 
-console.log("WAL lifecycle contract passed: automatic checkpoint threshold and explicit passive/truncate results are observable");
+console.log("WAL lifecycle contract passed: create, write, checkpoint, close, and reopen storage evidence is observable");

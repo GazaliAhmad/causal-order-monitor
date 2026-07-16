@@ -23,6 +23,7 @@ import {
   MonitorSchemaError,
   type MonitorSchemaInfo,
 } from "./schema.js";
+import { projectFilesystemStorage } from "./storagePressure.js";
 
 interface ReservoirIngressOptions {
   sourcePath: MonitorSourcePath;
@@ -716,17 +717,10 @@ export class SQLiteReservoir {
       const filesystem = statfsSync(dirname(databasePath), { bigint: true });
       const availableBytes = filesystem.bavail * filesystem.bsize;
       const totalBytes = filesystem.blocks * filesystem.bsize;
-      const usedPercent = totalBytes === 0n
-        ? null
-        : Number(((totalBytes - availableBytes) * 10_000n) / totalBytes) / 100;
-      const availablePercent = usedPercent === null ? null : 100 - usedPercent;
-      const pressure = availablePercent === null
-        ? "unknown"
-        : availablePercent <= 5
-          ? "critical"
-          : availablePercent <= 15
-            ? "elevated"
-            : "normal";
+      const { pressure, usedPercent } = projectFilesystemStorage(
+        availableBytes,
+        totalBytes,
+      );
       return {
         pressure,
         databaseBytes: databaseBytes.toString(),

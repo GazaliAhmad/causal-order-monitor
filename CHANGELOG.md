@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.2
+
+- hardened filesystem storage-pressure classification to compare exact integer byte ratios at the 5% critical and 15% elevated boundaries instead of deriving pressure from a rounded display percentage
+- added deterministic coverage for exact threshold values, immediately adjacent byte values, zero/full availability, and invalid filesystem metadata
+- expanded WAL lifecycle validation to cover database and WAL byte evidence across create, write, checkpoint, close, and reopen transitions
+- expanded the fixed-query inspection contract from an empty reservoir through 10,000 pending rows while preserving four index-backed aggregations
+- exercised versioned operator inspection while ingress, replay, pruning, and checkpointing overlap, preserving JSON safety, ordering, gating, lifecycle counts, and reopen state
+- kept repository development and npm-published version markers distinct during release-candidate preparation and publication dry runs
+- preserved the complete v0.3.0/v0.3.1 public contract, SQLite schema version 2, and all inherited recovery invariants
+
 ## v0.3.1
 
 - fixed active replay backoff so the documented `recovering` and `wait_for_retry` operator posture is reachable instead of being masked by terminal-failure precedence

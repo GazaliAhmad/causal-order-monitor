@@ -59,7 +59,7 @@ The corresponding recommended action is `relieve_protective_pressure`.
 
 ## Storage pressure
 
-`storage.pressure` reports bounded filesystem metadata: `critical` at 5% or less available, `elevated` at 15% or less, `normal` above 15%, and `unknown` when facts are unavailable.
+`storage.pressure` reports bounded filesystem metadata: `critical` at exactly 5% or less available, `elevated` above 5% through exactly 15%, `normal` above 15%, and `unknown` when facts are unavailable or invalid. Classification uses the filesystem byte counts directly; `filesystemUsedPercent` is display evidence and is not fed back into threshold classification.
 
 1. Track `databaseBytes`, `walBytes`, and `filesystemAvailableBytes` as decimal strings.
 2. At `elevated`, investigate growth, retention, and checkpoint health.

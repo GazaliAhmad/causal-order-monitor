@@ -87,6 +87,9 @@ async function testConcurrentIngressAndInspection(root) {
     await gate.arrived;
     assert.equal(adapter.getSnapshot().reservoir.totalPendingRows, 4);
     assert.equal(adapter.getInspectedSnapshot().liveFlowGateClosed, false);
+    const ingressOperator = adapter.getOperatorSnapshot();
+    assert.equal(ingressOperator.backlog.totalRows, 4);
+    assert.doesNotThrow(() => JSON.stringify(ingressOperator));
     gate.release();
     const results = await Promise.all(ingests);
     assert.deepEqual(results.map((result) => result.rowId), [1, 2, 3, 4]);
@@ -172,6 +175,10 @@ async function testReplayInspectionPruneAndCheckpoint(root) {
     await gate.arrived;
     assert.equal(adapter.getSnapshot().reservoir.totalPendingRows, 3);
     assert.equal(adapter.getInspectedSnapshot().liveFlowGateClosed, true);
+    const replayOperator = adapter.getOperatorSnapshot();
+    assert.equal(replayOperator.replay.gateClosed, true);
+    assert.equal(replayOperator.backlog.totalRows, 3);
+    assert.doesNotThrow(() => JSON.stringify(replayOperator));
     assert.deepEqual(adapter.getRuntime().pruneReservoir(), {
       markedDeadLetter: 0,
       deletedRows: 0,
@@ -208,7 +215,10 @@ async function testBoundedStressAndReopen(root) {
         const id = `stress-${String(index).padStart(3, "0")}`;
         expectedOrder.push(id);
         runtime.ingestTransportEvent(event(id, now + BigInt(index)));
-        if (index % 25 === 0) runtime.getInspectedSnapshot();
+        if (index % 25 === 0) {
+          const operator = runtime.getOperatorSnapshot();
+          assert.doesNotThrow(() => JSON.stringify(operator));
+        }
         if (index % 50 === 0) runtime.pruneReservoir();
         if (index % 75 === 0) runtime.checkpointReservoirWal("passive");
       }),
@@ -229,7 +239,8 @@ async function testBoundedStressAndReopen(root) {
       assert.ok(batch.entries.length > 0);
       actualOrder.push(...batch.entries.map((entry) => entry.event.id));
       runtime.acknowledgeReplayBatch(batch.entries.map((entry) => entry.rowId));
-      runtime.getInspectedSnapshot();
+      const operator = runtime.getOperatorSnapshot();
+      assert.doesNotThrow(() => JSON.stringify(operator));
     }
     assert.deepEqual(actualOrder, expectedOrder);
     assert.equal(runtime.getReservoirStats().totalPendingRows, 0);
@@ -275,7 +286,7 @@ try {
   await testReplayInspectionPruneAndCheckpoint(root);
   await testBoundedStressAndReopen(root);
   console.log(
-    "concurrency contract passed: deterministic in-process interleavings and 300-event stress preserved counts, replay ownership, monitor-ingest order, gating, and reopen state",
+    "concurrency contract passed: operator inspection overlapped ingress, replay, prune, checkpoint, and 300-event stress while preserving ordering, gating, and reopen state",
   );
 } finally {
   rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

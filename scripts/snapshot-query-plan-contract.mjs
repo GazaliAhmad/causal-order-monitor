@@ -16,7 +16,8 @@ try {
     observedAt: nowMs,
     details: {},
   });
-  for (let index = 0; index < 1_000; index += 1) {
+  assert.equal(runtime.getOperatorSnapshot().backlog.totalRows, 0);
+  for (let index = 0; index < 10_000; index += 1) {
     runtime.ingestTransportEvent({
       id: `query-plan-${index}`,
       nodeId: "query-plan-node",
@@ -26,7 +27,7 @@ try {
     });
   }
   const snapshot = runtime.getOperatorSnapshot();
-  assert.equal(snapshot.backlog.totalRows, 1_000);
+  assert.equal(snapshot.backlog.totalRows, 10_000);
   assert.doesNotThrow(() => JSON.stringify(snapshot));
 } finally {
   runtime.close();
@@ -53,5 +54,5 @@ try {
 }
 
 console.log(
-  "snapshot query-plan contract passed: four fixed reservoir aggregations remain index-backed at 1,000 pending rows",
+  "snapshot query-plan contract passed: four fixed reservoir aggregations remain index-backed from empty through 10,000 pending rows",
 );
