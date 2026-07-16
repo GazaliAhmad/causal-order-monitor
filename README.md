@@ -31,8 +31,8 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 ## Version Status
 
 - Latest published npm version: `v0.3.1`
-- Current repository development version: `v0.3.1`
-- Status: `v0.3.1` published to npm.
+- Current repository development version: `v0.3.2`
+- Status: `v0.3.2` is under repository validation; `v0.3.1` remains published to npm.
 
 Running `npm install @causal-order/monitor` installs `v0.3.1` from the npm registry.
 

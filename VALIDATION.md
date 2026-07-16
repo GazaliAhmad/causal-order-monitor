@@ -36,6 +36,7 @@ Individual checks are available through:
 - `npm run test:schema-compatibility`
 - `npm run test:shutdown-lifecycle-contract`
 - `npm run test:storage-failure-contract`
+- `npm run test:storage-pressure-contract`
 - `npm run test:terminal-retention-contract`
 - `npm run test:wal-lifecycle-contract`
 - `npm run test:backup-restore-contract`
