@@ -12,6 +12,8 @@ npm run ci
 
 The default CI contract includes both 10,000-row threshold and retention/admission pressure scenarios so backlog-dependent ingress regressions remain release-blocking.
 
+The v0.3.3 compatibility closure retains the v0.3.0 consumer contract in `scripts/fixtures/v0.3.0-public-contract.mjs`. `npm run test:compatibility-audit` verifies every published runtime namespace, selected generated declaration literals and operation signatures, public class methods, configuration keys, raw and inspected snapshot shapes, operator snapshot schema/version and required fields, operation result shapes, and every schema-v2 table, column, and named index. The fixture is independent of current source enumeration so an accidental removal or reinterpretation cannot silently rewrite the expected baseline.
+
 Individual checks are available through:
 
 - `npm run check`
@@ -95,6 +97,24 @@ The run passed every fault phase, delivered all `427737` generated unique events
 - true protective-stop behavior maps to HTTP `503 Service Unavailable` when dedupe-only bypass pressure crosses the hard backlog threshold
 
 ## Release Evidence
+
+The v0.3.3 compatibility-closure release passed:
+
+- the complete default CI contract, including the retained v0.3.0 compatibility fixture and all 22 forced-termination boundaries
+- the three-scenario eight-node operational smoke suite
+- publication preparation and the complete release check, including npm publication dry run and its second full CI pass
+- retained artifact packing and clean-consumer TypeScript/runtime verification
+
+Retained v0.3.3 artifact:
+
+- filename: `causal-order-monitor-0.3.3.tgz`
+- files: `62`
+- packed bytes: `55,763`
+- unpacked bytes: `245,739`
+- SHA-1: `c1c1aca78642a7e9f07dd0b7eeeee6c739338c00`
+- integrity: `sha512-JmCu8BTmuMMYO+C9giBKJoaimVEAxELwkDb/3Dh5epgqysYxw1yWlagKSgBzaROw+VTTpXqg/3R7JT1/AzomOw==`
+
+The clean consumer resolved monitor 0.3.3 with transport 0.1.2, dedupe 1.1.1, causal-order 1.0.0, testing 0.2.6, and TypeScript 6.0.3. It passed package/export version identity, declaration consumption, v1 JSON safety, admission, boundary, schema, and lifecycle checks.
 
 Tracked evidence for the overnight 8-node wall-clock dual-outage run is stored in:
 

@@ -30,11 +30,11 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Version Status
 
-- Latest published npm version: `v0.3.1`
-- Current repository development version: `v0.3.2`
-- Status: `v0.3.2` is under repository validation; `v0.3.1` remains published to npm.
+- Current npm release: `v0.3.3`
+- Current repository version: `v0.3.3`
+- Status: `v0.3.3` closes the planned v0.3.x compatibility line and is the supported release for new installations.
 
-Running `npm install @causal-order/monitor` installs `v0.3.1` from the npm registry.
+Running `npm install @causal-order/monitor` installs `v0.3.3` from the npm registry.
 
 ## When To Use It
 
@@ -229,6 +229,8 @@ In practical terms:
 - older unacknowledged rows age out when pruning runs and are marked `dead_letter` once they pass the hard cutoff
 
 So the current behavior is closer to “drop older buffered rows once they age past the ceiling” than “reject every new ingress immediately at the ceiling.”
+
+This describes the current `v0.3.3` behavior. Future quota work is governed by the accepted [reservoir capacity, admission, and overflow ADR](docs/adr/0001-reservoir-capacity-admission-and-overflow.md); those controls are planned for `v0.5.0` and are not available in the current release.
 
 When a pending row ages out, it transitions to `dead_letter` and starts its own evidence-retention clock. Delivered evidence is retained independently. Each call to `pruneReservoir()` marks at most `pruneBatchSize` pending rows and deletes at most `pruneBatchSize` eligible terminal rows, so larger cleanup sets require repeated calls.
 
@@ -489,6 +491,30 @@ The preferred machine-consumable contract is `getOperatorSnapshot()`. It is disc
 
 All millisecond and byte quantities in this versioned contract are decimal strings, so the complete value can be passed through `JSON.stringify()` without a BigInt replacer. It exposes stable overall status, affected components, recommended action, admission posture, backlog age, replay progress, and bounded filesystem storage facts. The older inspected snapshot remains available as a compatibility surface and continues to use BigInt values.
 
+### Migrating From Unversioned Inspection
+
+Existing `getInspectedSnapshot()` and `inspectMonitorSnapshot()` callers remain supported throughout the v0.3.x compatibility line. Migrate when you need a version discriminator, stable operator status/action/admission semantics, or ordinary JSON serialization:
+
+```ts
+// Existing unversioned inspection: BigInt time values and compatibility fields.
+const inspected = monitor.getInspectedSnapshot();
+const pendingAgeMs: bigint = inspected.oldestPendingAgeMs;
+
+// Preferred operator contract: check the discriminator before interpretation.
+const operator = monitor.getOperatorSnapshot();
+if (
+  operator.schema !== "causal-order-monitor/operator-snapshot" ||
+  operator.version !== 1
+) {
+  throw new Error("Unsupported monitor operator snapshot");
+}
+
+const pendingAgeDecimal: string = operator.backlog.oldestAgeMs;
+const serialized = JSON.stringify(operator);
+```
+
+For a previously captured raw `MonitorSnapshot`, use `inspectMonitorSnapshotV1(raw, storage)` instead of `inspectMonitorSnapshot(raw)`. The v1 projection reorganizes evidence under `admission`, `backlog`, `replay`, and `storage`; consumers should follow those public fields rather than translate internal counters or human-readable reason text. Decimal strings preserve full millisecond and byte precision. Convert one with `BigInt(value)` only when local arithmetic is required.
+
 Filesystem pressure is classified from bounded filesystem metadata: at most 5% available is `critical`, at most 15% is `elevated`, and greater than 15% is `normal`. In-memory databases or unavailable filesystem metadata report `unknown`; no integrity check or table scan is performed.
 
 During replay failure, an active retry deadline reports `status: "recovering"` with `recommendedAction: "wait_for_retry"`. After that deadline passes, the snapshot reports `status: "attention_required"` with `recommendedAction: "inspect_replay_failure"`; the recovery gate remains closed and admission remains accepted-buffered until replay resumes or the retained backlog is reconciled.
@@ -582,6 +608,7 @@ These remain part of the `v0.2.2` public compatibility contract and continue to 
 - [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
 - [Persistence operations](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/persistence-operations.md)
 - [Operator runbook](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/operator-runbook.md)
+- [Accepted reservoir capacity, admission, and overflow ADR](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/adr/0001-reservoir-capacity-admission-and-overflow.md)
 
 ## License
 

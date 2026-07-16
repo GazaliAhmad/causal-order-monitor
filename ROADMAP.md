@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.3.1` repository hardening baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
+This file records the `v0.3.3` repository compatibility-closure baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -17,11 +17,25 @@ This file records the `v0.3.1` repository hardening baseline for `@causal-order/
 
 ## Current Release
 
-- Status: `v0.3.1` is the current published npm release.
-- The `v0.3.1` package hardens the versioned JSON-safe operator snapshot by making active retry-wait and expired failed-replay gate mappings agree with documented runtime behavior.
+- Status: `v0.3.3` is the current npm and repository release.
+- The `v0.3.3` release closes the planned v0.3.x line with a retained v0.3.0 public-contract fixture, complete compatibility coverage, and explicit migration guidance for the versioned JSON-safe operator snapshot.
 - Stable boundary errors classify shutdown, storage contention/capacity/access/I/O failures, protective refusal, and persisted-but-unobserved adapter completion without weakening SQLite recovery authority.
 - Snapshot generation retains four fixed index-backed reservoir aggregations and SQLite schema version 2.
 - The policy-neutral `MonitorEventTimingEvidence` handoff remains available at the root and `/types` entrypoints without monitor prescribing business policy.
+
+## Planned SemVer Themes
+
+| Version | Theme |
+| --- | --- |
+| `v0.4.0` | Stack integration and correctness invariants |
+| `v0.5.0` | Operational behavior, performance, and soak qualification |
+| `v0.6.0` | API and semantic freeze |
+| `v0.7.0` | Platform qualification |
+| `v0.8.0` | Operations and ecosystem readiness |
+| `v0.9.0` | Release-candidate hardening and burn-in |
+| `v1.0.0` | Stable recovery contract |
+
+The sequence is intentional: validate the real package stack and enforce correctness first; qualify operational behavior and performance before freezing public semantics; then complete platform, ecosystem, and release readiness before the stable contract.
 - The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 
 ## Package Intent
@@ -52,7 +66,7 @@ Its role is to:
 
 `@causal-order/persistence` may independently provide SQLite as one adapter for persistence-owned concerns such as WALs, checkpoints, and component state. The two packages may therefore both use SQLite, but they own separate data, schemas, lifecycles, and APIs. A persistence SQLite adapter does not absorb the monitor reservoir, and no future consolidation should be inferred without a separate explicit architecture decision.
 
-The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.3.1. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
+The planned cross-package recovery contract is not implemented by the current monitor and is not part of v0.3.x. Until that integration milestone, `SQLiteReservoir` remains the standalone monitor's sole recovery authority. A future persistence integration must first settle the shared recovery identity, add any required monitor schema support, and implement deterministic cross-store reconciliation before it can ship.
 
 It is not meant to be:
 
@@ -349,7 +363,7 @@ Delivered in `v0.2.3`:
 
 ## Phase 4: Versioned Operator and Boundary Contracts (Target: `v0.3.0`)
 
-Status: complete in the repository `v0.3.0` release candidate.
+Status: complete in the tagged repository `v0.3.0` release.
 
 Stabilize the inspection model as a machine-consumable operational API.
 
@@ -388,7 +402,7 @@ Status: published in npm release v0.3.1.
 
 ### v0.3.2 bounded-inspection and storage-pressure hardening
 
-Status: complete in the repository v0.3.2 release candidate.
+Status: complete in the tagged repository v0.3.2 release.
 
 - exact integer byte-ratio classification protects the 5% critical and 15% elevated boundaries without using rounded display percentages
 - 12 deterministic fixtures cover exact and adjacent thresholds plus invalid filesystem metadata
@@ -398,7 +412,18 @@ Status: complete in the repository v0.3.2 release candidate.
 - schema version 2, public snapshot v1, stable codes, replay/recovery invariants, and exact compatibility remain unchanged
 - deployment quotas, cross-process ownership, stack integration, and soak qualification remain outside this patch
 
-## Phase 5: Stack Integration and Artifact Contracts (Target: `v0.4.0`)
+### v0.3.3 compatibility closure
+
+Status: complete in npm and repository release v0.3.3.
+
+- a retained v0.3.0 fixture protects every published runtime namespace, stable declaration literal and operation signature, public prototype, configuration key, snapshot/result shape, and schema-v2 table/column/index boundary
+- README migration guidance moves consumers from the unversioned BigInt inspection surface to the discriminated JSON-safe v1 operator snapshot without removing either API
+- operator and persistence guidance uses only public v1 fields and stable status, action, admission, reason, and boundary meanings
+- no new production defect was found; v0.3.1 and v0.3.2 remain the only implementation corrections after v0.3.0
+- v0.3.3 is the final planned v0.3.x release; later v0.3.x versions are unscheduled backward-compatible maintenance only
+- peer matrices, broad packed-artifact imports, and full-stack recovery integration remain Phase 5 work for v0.4.0
+
+## Phase 5: Stack Integration and Correctness Invariants (Target: `v0.4.0`)
 
 Validate the monitor as the recovery layer for the real causal-order package stack, not only as a repository-local library.
 
@@ -407,15 +432,31 @@ Validate the monitor as the recovery layer for the real causal-order package sta
 - run compatibility suites against supported `@causal-order/transport`, `@causal-order/dedupe`, `causal-order`, and `@causal-order/testing` versions
 - preserve replay-through-dedupe, replay ownership, and `202`/`503` contracts at the transport boundary
 - publish a complete reference integration covering healthy delivery, degradation, outage buffering, restart, recovery, and replay
+- enforce one in-flight replay reconciliation/pump operation per adapter and add an intentional competing-pump contract
+- document the single adapter/runtime owner per live reservoir boundary
+- add an explicit optimistic/conservative startup-health policy and use conservative startup in the reference integration
+- publish an optional reference scheduler that serializes replay and drives health refresh, pruning, retry-aware recovery, and clean shutdown
 
 Exit criteria:
 
 - CI tests the same npm artifact consumers install
 - the supported peer-version matrix is explicit and continuously exercised
 - the reference integration completes the full failure and recovery lifecycle without repository source imports
+- concurrent scheduler or caller ticks cannot interleave replay batches through one adapter
+- the reference integration does not enable live forwarding before its configured startup-health evidence is satisfied
 
-## Phase 6: Performance and Soak Qualification (Target: `v0.5.0`)
+## Phase 6: Operational Behavior, Performance, and Soak Qualification (Target: `v0.5.0`)
 
+- implement the accepted [ADR 0001: Reservoir Capacity, Admission, and Overflow Semantics](docs/adr/0001-reservoir-capacity-admission-and-overflow.md) before capacity code ships
+- add opt-in pending-row, payload-size, and logical-byte/free-space admission limits with stable refusal evidence
+- use `reject_new` as the initial safe overflow behavior; do not silently evict previously accepted pending work
+- qualify an optional supported scheduler with one in-flight replay pump, actual replay pacing, retry-deadline awareness, periodic health refresh/pruning, cancellation, and inspectable health
+- add a typed, bounded, non-awaited, failure-isolated `monitor.lifecycle.subscribe(event, listener)` contract for ingress, storage, delivery, replay, retention, health, pressure, and duration facts without requiring a telemetry vendor
+- distinguish `deliveryAttempted`, `deliveryHandlerCompleted`, `deliveryAcknowledged`, `deliveryFailed`, and `deliveryIndeterminate`; emit committed-state events only after the corresponding SQLite mutation commits
+- isolate listener exceptions and rejected promises from recovery outcomes; monitor operations enqueue but never await observers
+- bound the observer queue, document its overflow and shutdown-flush policies, and expose queue depth/capacity, dropped-event totals, listener-failure totals, and last-drop evidence
+- return unsubscribe functions, publish immutable evidence, preserve only explicitly defined per-row lifecycle ordering, and exclude application payload bodies by default
+- support metrics, tracing, logs, and best-effort operational audit while explicitly excluding durable/compliance audit and recovery-authority guarantees
 - establish repeatable ingress, replay, prune, startup, and inspection benchmarks
 - run long-duration healthy-flow, extended-outage, reconnect-burst, and repeated-recovery soak contracts
 - define bounded expectations for memory, file descriptors, database/WAL growth, retry activity, and shutdown duration
@@ -427,13 +468,19 @@ Exit criteria:
 - no unexplained resource growth remains across the supported soak scenarios
 - performance regressions are detectable from repeatable baselines
 - documented sizing guidance connects ingress rate, outage duration, disk capacity, and replay rate
+- sustained-load tests cover predictable capacity refusal, scheduler pacing, replay recovery, and emitted lifecycle observations
+- capacity contracts prove quota accounting is transactional and restart-safe, configured refusal occurs before acceptance, and pressure never silently evicts accepted pending work
+- lifecycle-event tests protect typed immutable evidence, committed-state timing, non-awaited dispatch, listener exception/rejection isolation, bounded overflow and observable drops, unsubscription, shutdown cleanup, payload exclusion, and documented ordering limits
+- capacity documentation distinguishes logical pending bytes, database/WAL observations, filesystem reserve, and deployment-owned disk provisioning
 
-## Phase 7: API Convergence and Compatibility Policy (Target: `v0.6.0`)
+## Phase 7: API and Semantic Freeze (Target: `v0.6.0`)
 
 - audit every root export, subpath, adapter result, configuration field, snapshot field, routing mode, reason code, and error type
 - define semantic-versioning rules for TypeScript types, config defaults, peer dependencies, subpaths, snapshots, and the SQLite schema
 - complete supported deprecation windows and remove only APIs whose migration path has been released and validated
 - normalize lifecycle, error, and boundary-result semantics before freezing the surface
+- finalize startup health states and defaults, including whether `unknown` or `initializing` becomes public
+- finalize quota, overflow, scheduler, replay-busy/coalescing, and typed lifecycle-observer contracts, including stable event names/evidence types, queue bounds, overflow/shutdown policy, instrumentation snapshot, and ordering guarantees
 - require compatibility review for new public API after this phase
 
 Exit criteria:
@@ -441,6 +488,7 @@ Exit criteria:
 - no known public-surface redesign is deferred to `v1.0.0`
 - all removals have tested migration guidance
 - the intended `v1` root and subpath surfaces are explicit contract fixtures
+- startup forwarding, replay serialization, and overload refusal have explicit stable semantics
 
 ## Phase 8: Platform Qualification (Target: `v0.7.0`)
 
@@ -451,9 +499,10 @@ Exit criteria:
 
 - supported platforms pass the same core recovery contracts
 
-## Phase 9: Operations and Release Readiness (Target: `v0.8.0`)
+## Phase 9: Operations and Ecosystem Readiness (Target: `v0.8.0`)
 
 - complete deployment, storage, upgrade, troubleshooting, and incident-response documentation
+- provide or document optional OpenTelemetry, Prometheus, StatsD, and application-defined adapters for the stable lifecycle-observer contract
 - verify npm provenance, package contents, licenses, peer dependency guidance, and reproducible release checks
 - conduct a security and data-handling review of persisted payloads and operator evidence
 
@@ -463,7 +512,7 @@ Exit criteria:
 - release automation rejects incomplete or mismatched package metadata
 - persisted payload and operator-evidence responsibilities are documented and reviewed
 
-## Phase 10: v1 Readiness Burn-in (Target: `v0.9.0`)
+## Phase 10: Release-candidate Hardening and Burn-in (Target: `v0.9.0`)
 
 `v0.9.0` is a normal pre-1 release, not a SemVer pre-release identifier. If final `v1.0.0` artifacts require candidate publication, use `v1.0.0-rc.N` only for those actual candidates; no release-candidate sequence is preallocated.
 
@@ -490,3 +539,4 @@ Publish `v1.0.0` only when the monitor can make a durable compatibility and reco
 - supported stack versions and platforms pass packed-artifact integration, failure, upgrade, and soak validation
 - production documentation and migration guidance are complete
 - no unresolved critical correctness, ordering, data-loss, or recovery issue remains
+- no unresolved critical replay-concurrency, startup-forwarding, unbounded-capacity, scheduler, or operational-observability issue remains

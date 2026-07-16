@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.3
+
+- added a retained v0.3.0 public-contract fixture and expanded compatibility validation across every published runtime namespace, generated declaration literals and operation signatures, public prototypes, configuration, raw/unversioned/versioned snapshots, result shapes, and the complete schema-v2 table/column/index layout
+- added explicit migration guidance from the unversioned BigInt inspection surface to the discriminated JSON-safe v1 operator snapshot while preserving both APIs throughout the v0.3.x compatibility line
+- audited README and operator/persistence runbooks against public v1 fields and stable action/admission meanings, correcting the retry-wait procedure numbering without changing runtime semantics
+- recorded v0.3.3 as the final planned v0.3.x compatibility-closure release; later v0.3.x versions are reserved for unscheduled backward-compatible maintenance
+- preserved the complete v0.3.0 contract, v0.3.1/v0.3.2 hardening behavior, SQLite schema version 2, and all inherited recovery invariants without requiring a production-code correction
+
 ## v0.3.2
 
 - hardened filesystem storage-pressure classification to compare exact integer byte ratios at the 5% critical and 15% elevated boundaries instead of deriving pressure from a rounded display percentage
