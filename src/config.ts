@@ -19,6 +19,9 @@ import {
   type MonitorJsonThrottleTierConfig,
   type MonitorJsonTransportConfig,
   type MonitorReplayConfig,
+  type MonitorStartupConfig,
+  type MonitorStartupHealthPolicy,
+  type MonitorJsonStartupConfig,
   type MonitorReservoirConfig,
   type MonitorThrottleConfig,
   type MonitorThrottleTierConfig,
@@ -71,6 +74,7 @@ export interface MonitorConfigOverride {
     defaultTier?: MonitorThrottleTier;
   };
   replay?: Partial<MonitorReplayConfig>;
+  startup?: Partial<MonitorStartupConfig>;
   now?: () => bigint;
 }
 
@@ -436,6 +440,25 @@ function parseReplayConfig(
   };
 }
 
+function parseStartupConfig(
+  value: MonitorJsonStartupConfig | undefined,
+): Partial<MonitorStartupConfig> {
+  if (value === undefined) return {};
+  const objectValue = assertObject(value, ["startup"]);
+  assertAllowedKeys(objectValue, ["healthPolicy"], ["startup"]);
+  const healthPolicy = objectValue.healthPolicy;
+  if (
+    healthPolicy !== undefined &&
+    healthPolicy !== "optimistic" &&
+    healthPolicy !== "conservative"
+  ) {
+    throw new Error("startup.healthPolicy must be 'optimistic' or 'conservative'.");
+  }
+  return {
+    healthPolicy: healthPolicy as MonitorStartupHealthPolicy | undefined,
+  };
+}
+
 export function parseMonitorConfigJson(jsonText: string): MonitorJsonConfig {
   let parsedValue: unknown;
   try {
@@ -448,7 +471,7 @@ export function parseMonitorConfigJson(jsonText: string): MonitorJsonConfig {
   const objectValue = assertObject(parsedValue, ["monitorConfig"]);
   assertAllowedKeys(
     objectValue,
-    ["reservoir", "transport", "health", "throttle", "replay"],
+    ["reservoir", "transport", "health", "throttle", "replay", "startup"],
     ["monitorConfig"],
   );
 
@@ -463,6 +486,7 @@ function resolvePartialMonitorConfig(
   const health = parseHealthConfig(config.health);
   const throttle = parseThrottleConfig(config.throttle);
   const replay = parseReplayConfig(config.replay);
+  const startup = parseStartupConfig(config.startup);
 
   return {
     reservoir: {
@@ -493,6 +517,9 @@ function resolvePartialMonitorConfig(
     },
     replay: {
       ...replay,
+    },
+    startup: {
+      ...startup,
     },
   };
 }
@@ -549,6 +576,10 @@ function mergeMonitorConfig(
     replay: {
       ...base.replay,
       ...override.replay,
+    },
+    startup: {
+      ...base.startup,
+      ...override.startup,
     },
   };
 }

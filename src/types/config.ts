@@ -56,12 +56,19 @@ export interface MonitorReplayConfig {
   retryBackoffMs: bigint;
 }
 
+export type MonitorStartupHealthPolicy = "optimistic" | "conservative";
+
+export interface MonitorStartupConfig {
+  healthPolicy: MonitorStartupHealthPolicy;
+}
+
 export interface MonitorConfig {
   reservoir: MonitorReservoirConfig;
   transport: MonitorTransportConfig;
   health: MonitorHealthConfig;
   throttle: MonitorThrottleConfig;
   replay: MonitorReplayConfig;
+  startup: MonitorStartupConfig;
   now?: () => bigint;
 }
 
@@ -131,12 +138,17 @@ export interface MonitorJsonReplayConfig {
   retryBackoffMs?: MonitorJsonDuration;
 }
 
+export interface MonitorJsonStartupConfig {
+  healthPolicy?: MonitorStartupHealthPolicy;
+}
+
 export interface MonitorJsonConfig {
   reservoir?: MonitorJsonReservoirConfig;
   transport?: MonitorJsonTransportConfig;
   health?: MonitorJsonHealthConfig;
   throttle?: MonitorJsonThrottleConfig;
   replay?: MonitorJsonReplayConfig;
+  startup?: MonitorJsonStartupConfig;
 }
 
 export function createDefaultMonitorConfig(): MonitorConfig {
@@ -193,6 +205,9 @@ export function createDefaultMonitorConfig(): MonitorConfig {
       healthConfirmationHeartbeats: 2,
       pauseLiveFlowDuringReplay: true,
       retryBackoffMs: 5_000n,
+    },
+    startup: {
+      healthPolicy: "optimistic",
     },
     now: createDefaultMonitorNow(),
   };

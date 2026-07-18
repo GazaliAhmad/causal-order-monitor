@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.3.3` repository compatibility-closure baseline for `@causal-order/monitor` while preserving the earlier runtime and operational decisions.
+This file records the `v0.4.0` repository release and its completed stack-integration work while preserving the earlier runtime and operational decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -17,7 +17,8 @@ This file records the `v0.3.3` repository compatibility-closure baseline for `@c
 
 ## Current Release
 
-- Status: `v0.3.3` is the current npm and repository release.
+- Status: `v0.4.0` is the current npm and repository release.
+- The `v0.3.3` compatibility-closure release remains the preserved v0.3.x baseline.
 - The `v0.3.3` release closes the planned v0.3.x line with a retained v0.3.0 public-contract fixture, complete compatibility coverage, and explicit migration guidance for the versioned JSON-safe operator snapshot.
 - Stable boundary errors classify shutdown, storage contention/capacity/access/I/O failures, protective refusal, and persisted-but-unobserved adapter completion without weakening SQLite recovery authority.
 - Snapshot generation retains four fixed index-backed reservoir aggregations and SQLite schema version 2.
@@ -423,9 +424,9 @@ Status: complete in npm and repository release v0.3.3.
 - v0.3.3 is the final planned v0.3.x release; later v0.3.x versions are unscheduled backward-compatible maintenance only
 - peer matrices, broad packed-artifact imports, and full-stack recovery integration remain Phase 5 work for v0.4.0
 
-## Phase 5: Stack Integration and Correctness Invariants (Target: `v0.4.0`)
+## Phase 5: Stack Integration and Correctness Invariants (Completed in `v0.4.0`)
 
-Validate the monitor as the recovery layer for the real causal-order package stack, not only as a repository-local library.
+Validated the monitor as the recovery layer for the real causal-order package stack, not only as a repository-local library.
 
 - install the packed monitor tarball into clean ESM TypeScript consumers
 - validate every documented root and subpath import from the packed artifact
@@ -444,6 +445,8 @@ Exit criteria:
 - the reference integration completes the full failure and recovery lifecycle without repository source imports
 - concurrent scheduler or caller ticks cannot interleave replay batches through one adapter
 - the reference integration does not enable live forwarding before its configured startup-health evidence is satisfied
+
+Phase 5 is complete in `v0.4.0`; its packed-artifact, peer, replay, ownership, startup, scheduler, lifecycle, compatibility, and CI evidence is retained in the internal `.local/v0.4.x/0.4.0/` records.
 
 ## Phase 6: Operational Behavior, Performance, and Soak Qualification (Target: `v0.5.0`)
 

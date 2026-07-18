@@ -20,6 +20,15 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 `@causal-order/monitor` now uses the built-in `node:sqlite` module, so no separate SQLite package is required. `causal-order`, `@causal-order/dedupe`, and `@causal-order/transport` are expected alongside this package as peers.
 
+## Supported Stack Versions
+
+| Package | Supported versions | Role |
+| --- | --- | --- |
+| `@causal-order/transport` | `^0.1.2` | Runtime peer. |
+| `@causal-order/dedupe` | `^1.1.1` | Runtime peer and required replay path. |
+| `causal-order` | `^1.0.0` | Runtime peer. |
+| `@causal-order/testing` | `^0.2.6` | Optional integration-testing tooling; not a runtime peer. |
+
 ## What It Does
 
 - buffers ingress events in SQLite so downstream outages do not immediately become data loss
@@ -30,11 +39,11 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 ## Version Status
 
-- Current npm release: `v0.3.3`
-- Current repository version: `v0.3.3`
-- Status: `v0.3.3` closes the planned v0.3.x compatibility line and is the supported release for new installations.
+- Current npm release: `v0.4.0`
+- Current repository version: `v0.4.0`
+- Status: `v0.4.0` delivers the packed-stack integration and correctness-invariant release.
 
-Running `npm install @causal-order/monitor` installs `v0.3.3` from the npm registry.
+Running `npm install @causal-order/monitor` installs `v0.4.0` from the npm registry.
 
 ## When To Use It
 
@@ -62,6 +71,12 @@ These are now enforced as separate replay-orchestration styles on the same runti
 - manual replay control through `MonitorRuntime`
 
 If a runtime is adapter-managed, direct manual replay commands on that runtime now fail fast with `ReplayOwnershipError` instead of allowing mixed control ownership.
+
+Concurrent `pumpReplayBatch()` and `reconcileRecovery()` calls on one `TransportMonitorAdapter` coalesce onto the same in-flight replay operation. The first call's batch limit governs that operation, and all callers receive its result. This serializes scheduler and caller ticks within one adapter while preserving the existing replay ownership boundary.
+
+One live SQLite reservoir has one owning `MonitorRuntime` (or one `TransportMonitorAdapter` built on that runtime). The adapter-local operation guard only serializes calls made through that adapter; it is not a cross-process lock, leader-election mechanism, or permission for multiple live processes to open the same reservoir. Stop and close the owner before backup, restore, relocation, or restart, then reopen the reservoir under exactly one owner.
+
+`MonitorScheduler` in `@causal-order/monitor/scheduler` is an optional caller-owned reference scheduler. It serializes health probing, replay reconciliation, and bounded pruning around one adapter, respects persisted replay retry deadlines, and stops idempotently. Health probes remain application-owned callbacks; stopping the scheduler does not close the adapter unless `closeAdapterOnStop: true` is selected.
 
 Advanced, inspection, and testing surfaces are documented in the sections below; they are secondary to the normal runtime and adapter paths.
 
@@ -230,7 +245,7 @@ In practical terms:
 
 So the current behavior is closer to “drop older buffered rows once they age past the ceiling” than “reject every new ingress immediately at the ceiling.”
 
-This describes the current `v0.3.3` behavior. Future quota work is governed by the accepted [reservoir capacity, admission, and overflow ADR](docs/adr/0001-reservoir-capacity-admission-and-overflow.md); those controls are planned for `v0.5.0` and are not available in the current release.
+This describes the current `v0.4.0` behavior. Future quota work is governed by the accepted [reservoir capacity, admission, and overflow ADR](docs/adr/0001-reservoir-capacity-admission-and-overflow.md); those controls are planned for `v0.5.0` and are not available in the current release.
 
 When a pending row ages out, it transitions to `dead_letter` and starts its own evidence-retention clock. Delivered evidence is retained independently. Each call to `pruneReservoir()` marks at most `pruneBatchSize` pending rows and deletes at most `pruneBatchSize` eligible terminal rows, so larger cleanup sets require repeated calls.
 
@@ -287,8 +302,11 @@ The lower-level `resolveMonitorConfig()` and `resolveMonitorConfigFromEnvironmen
 - `replay.healthConfirmationHeartbeats`: heartbeats required before replay resumes
 - `replay.pauseLiveFlowDuringReplay`: whether live flow stays gated during drain
 - `replay.retryBackoffMs`: delay before retrying a failed replay attempt
+- `startup.healthPolicy`: `"optimistic"` (the compatibility default) or `"conservative"`; conservative startup keeps ingress buffered until online evidence has been observed for transport, dedupe, and causal-order
 
 If you do not override `reservoir.databasePath`, the package now creates `./.causal-order-monitor/monitor.sqlite` automatically on the host where the monitor runs.
+
+The default `startup.healthPolicy: "optimistic"` preserves the existing startup behavior. Set `startup.healthPolicy` to `"conservative"` when the integration must wait for one online health observation from each monitored component before forwarding live ingress. This startup gate is separate from replay recovery confirmation and does not bypass restart backlog protection.
 
 By default, the monitor's internal `now()` clock is wall-clock anchored at startup and then advanced from a monotonic source so it does not move backward during the lifetime of the process. If you provide a custom `now`, you are taking responsibility for that time behavior.
 

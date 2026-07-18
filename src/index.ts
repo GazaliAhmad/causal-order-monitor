@@ -1,4 +1,4 @@
-export const monitorPackageVersion = "0.3.3";
+export const monitorPackageVersion = "0.4.0";
 
 export type MonitorImplementationStatus = "replay_operational";
 
@@ -119,6 +119,12 @@ export {
   type MonitorIngestResult,
   type ReplayPumpResult,
 } from "./transport/TransportMonitorAdapter.js";
+export {
+  MonitorScheduler,
+  type MonitorSchedulerOptions,
+  type MonitorSchedulerState,
+  type MonitorSchedulerTimerApi,
+} from "./scheduler/MonitorScheduler.js";
 export {
   monitorHarnessArtifacts,
   monitorHarnessScenarios,

@@ -12,7 +12,7 @@ npm run ci
 
 The default CI contract includes both 10,000-row threshold and retention/admission pressure scenarios so backlog-dependent ingress regressions remain release-blocking.
 
-The v0.3.3 compatibility closure retains the v0.3.0 consumer contract in `scripts/fixtures/v0.3.0-public-contract.mjs`. `npm run test:compatibility-audit` verifies every published runtime namespace, selected generated declaration literals and operation signatures, public class methods, configuration keys, raw and inspected snapshot shapes, operator snapshot schema/version and required fields, operation result shapes, and every schema-v2 table, column, and named index. The fixture is independent of current source enumeration so an accidental removal or reinterpretation cannot silently rewrite the expected baseline.
+The v0.4.0 release retains the v0.3.0 consumer contract in `scripts/fixtures/v0.3.0-public-contract.mjs`. `npm run test:compatibility-audit` verifies every published runtime namespace, selected generated declaration literals and operation signatures, public class methods, configuration keys, raw and inspected snapshot shapes, operator snapshot schema/version and required fields, operation result shapes, and every schema-v2 table, column, and named index. The fixture is independent of current source enumeration so an accidental removal or reinterpretation cannot silently rewrite the expected baseline.
 
 Individual checks are available through:
 
@@ -98,7 +98,17 @@ The run passed every fault phase, delivered all `427737` generated unique events
 
 ## Release Evidence
 
-The v0.3.3 compatibility-closure release passed:
+The v0.4.0 release candidate passed:
+
+- the complete CI and release-check contracts
+- packed-artifact import and declaration validation
+- the supported peer-version matrix
+- the packed full-stack startup, outage, restart, retry, and replay lifecycle
+- scheduler, ownership, startup-health, replay-concurrency, and inherited compatibility contracts
+
+The v0.4.0 release artifact is the package version prepared by the current repository metadata. Publication and registry verification are external release steps.
+
+The retained v0.3.3 compatibility-closure evidence remains historical:
 
 - the complete default CI contract, including the retained v0.3.0 compatibility fixture and all 22 forced-termination boundaries
 - the three-scenario eight-node operational smoke suite

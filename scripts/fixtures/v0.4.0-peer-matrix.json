@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "rows": [
+    {
+      "id": "minimum",
+      "description": "Exact minimum versions declared by the v0.4.0 integration baseline.",
+      "versions": {
+        "transport": "0.1.2",
+        "dedupe": "1.1.1",
+        "causalOrder": "1.0.0",
+        "testing": "0.2.6"
+      },
+      "installPreference": "offline"
+    },
+    {
+      "id": "declared-range-latest",
+      "description": "Latest registry versions selected by the monitor's declared compatible ranges.",
+      "versions": {
+        "transport": "^0.1.2",
+        "dedupe": "^1.1.1",
+        "causalOrder": "^1.0.0",
+        "testing": "^0.2.6"
+      },
+      "installPreference": "online"
+    }
+  ]
+}
