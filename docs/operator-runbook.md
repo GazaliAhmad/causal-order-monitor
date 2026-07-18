@@ -8,6 +8,10 @@ Use `MonitorRuntime.getOperatorSnapshot()` or `TransportMonitorAdapter.getOperat
 - `status: "degraded"` means live flow remains available but one or more entries in `affectedComponents` are not online.
 - Restore the listed component and watch the status through recovery. Do not start manual replay on an adapter-managed runtime.
 
+If `startup.healthPolicy` is `"conservative"`, startup ingress remains buffered until the monitor has observed online evidence for transport, dedupe, and causal-order. This is an intentional startup gate, not a downstream outage diagnosis; continue the configured health observations and do not bypass it by starting competing replay control.
+
+If using `MonitorScheduler`, keep one scheduler attached to the owning adapter. Its health probe callback should report the application’s observed component state; scheduler errors are reported through `onError` and do not create a second replay owner.
+
 ## Outage with contained buffering
 
 `admission.posture: "accepted_buffered"`, `accepted: true`, and `httpStatus: 202` mean the event was accepted into SQLite but not forwarded normally. The snapshot status is normally `buffering` and the recommended action is `restore_affected_components`.
@@ -83,6 +87,8 @@ Use `classifyMonitorBoundaryFailure()` for stable application routing. Unknown f
 3. Read the v1 operator snapshot.
 4. Allow interrupted replay claims to be reclaimed and normal recovery confirmation to complete.
 5. Reopen live flow only when admission and gate evidence permit it.
+
+Do not start a second runtime or adapter against the same reservoir while the original owner is live. Replay-call serialization is process-local and does not coordinate independent processes. For backup, restore, or relocation, stop and close the existing owner first, complete the operation, and then restart exactly one owner.
 
 ## Indeterminate adapter completion
 

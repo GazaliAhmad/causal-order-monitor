@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.0
+
+- validated the packed monitor artifact across clean ESM TypeScript consumers and the supported causal-order stack peer matrix
+- serialized concurrent adapter replay reconciliation and batch pumping onto one in-flight operation
+- defined one live SQLite reservoir owner per runtime/adapter and documented stopped backup, restore, relocation, and restart procedures
+- added optimistic and conservative startup-health policies
+- added the optional caller-owned `MonitorScheduler` reference scheduler with retry-aware replay, bounded pruning, and deterministic shutdown
+- added the packed full-stack lifecycle covering startup, healthy delivery, outage buffering, restart, replay failure/backoff, and recovery through dedupe
+- integrated the Phase 5 contracts into CI while preserving v0.3 compatibility and operator semantics
+
 ## v0.3.3
 
 - added a retained v0.3.0 public-contract fixture and expanded compatibility validation across every published runtime namespace, generated declaration literals and operation signatures, public prototypes, configuration, raw/unversioned/versioned snapshots, result shapes, and the complete schema-v2 table/column/index layout

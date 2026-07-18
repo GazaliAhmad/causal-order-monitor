@@ -12,6 +12,7 @@ import * as inspectModule from "@causal-order/monitor/inspect";
 import * as replayModule from "@causal-order/monitor/replay";
 import * as routingModule from "@causal-order/monitor/routing";
 import * as runtimeModule from "@causal-order/monitor/runtime";
+import * as schedulerModule from "@causal-order/monitor/scheduler";
 import * as storageModule from "@causal-order/monitor/storage";
 import * as testingModule from "@causal-order/monitor/testing";
 import * as throttleModule from "@causal-order/monitor/throttle";
@@ -50,6 +51,7 @@ const runtimeNamespaces = {
   replay: replayModule,
   routing: routingModule,
   runtime: runtimeModule,
+  scheduler: schedulerModule,
   storage: storageModule,
   testing: testingModule,
   throttle: throttleModule,

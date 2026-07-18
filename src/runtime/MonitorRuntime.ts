@@ -71,6 +71,8 @@ export class MonitorRuntime {
   #throttleTier: MonitorThrottleTier;
   #recoveryReplayNeeded: boolean;
   #observedRecoveryTransition: boolean;
+  #startupHealthReady: boolean;
+  readonly #startupHealthEvidence = new Set<MonitorComponent>();
   #replayOwner: ReplayOrchestrationOwner | null;
   #closed = false;
 
@@ -125,6 +127,10 @@ export class MonitorRuntime {
         ...defaults.replay,
         ...config.replay,
       },
+      startup: {
+        ...defaults.startup,
+        ...config.startup,
+      },
       now: config.now ?? defaults.now,
     };
 
@@ -142,6 +148,7 @@ export class MonitorRuntime {
     this.#throttleTier = this.#config.throttle.defaultTier;
     this.#recoveryReplayNeeded = this.#reservoir.getPendingRowCount() > 0;
     this.#observedRecoveryTransition = this.#recoveryReplayNeeded;
+    this.#startupHealthReady = this.#config.startup.healthPolicy === "optimistic";
     this.#replayOwner = null;
   }
 
@@ -227,8 +234,17 @@ export class MonitorRuntime {
             }`,
           }
         : decision;
-    this.#throttleTier = gatedDecision.throttleTier;
-    return gatedDecision;
+    const startupGatedDecision =
+      this.#config.startup.healthPolicy === "conservative" &&
+      !this.#startupHealthReady
+        ? {
+            ...gatedDecision,
+            action: "buffer_only" as const,
+            reason: `${gatedDecision.reason}; conservative startup awaiting health evidence`,
+          }
+        : gatedDecision;
+    this.#throttleTier = startupGatedDecision.throttleTier;
+    return startupGatedDecision;
   }
 
   updateComponentHealth(
@@ -238,6 +254,7 @@ export class MonitorRuntime {
     this.#assertOpen("update component health");
     const previous = this.#healthTracker.getComponentSnapshot(component);
     const snapshot = this.#healthTracker.updateComponentHealth(component, update);
+    this.#recordStartupHealthEvidence(component, snapshot.state);
     this.#reservoir.recordHealthTransition(snapshot);
 
     if (
@@ -303,6 +320,7 @@ export class MonitorRuntime {
       observedAt,
       details,
     );
+    this.#recordStartupHealthEvidence(component, snapshot.state);
     this.#reservoir.recordHealthTransition(snapshot);
     this.#replay.observeRecoveryHeartbeat(
       component,
@@ -653,6 +671,15 @@ export class MonitorRuntime {
     }
 
     return this.#hasReplayEligibleBacklog(this.getReservoirStats());
+  }
+
+  #recordStartupHealthEvidence(
+    component: MonitorComponent,
+    state: MonitorHealthUpdate["state"],
+  ): void {
+    if (this.#config.startup.healthPolicy !== "conservative") return;
+    if (state === "online") this.#startupHealthEvidence.add(component);
+    if (this.#startupHealthEvidence.size === 3) this.#startupHealthReady = true;
   }
 
   #assertReplayOwnership(

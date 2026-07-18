@@ -11,6 +11,7 @@ export const v030PublicContract = Object.freeze({
     "./replay",
     "./routing",
     "./runtime",
+    "./scheduler",
     "./storage",
     "./testing",
     "./throttle",
@@ -28,6 +29,7 @@ export const v030PublicContract = Object.freeze({
       "MonitorClosedError",
       "MonitorIndeterminateOutcomeError",
       "MonitorRuntime",
+      "MonitorScheduler",
       "ReplayCoordinator",
       "ReplayOwnershipError",
       "SQLiteReservoir",
@@ -82,6 +84,7 @@ export const v030PublicContract = Object.freeze({
       "createMonitorRuntimeFromFile",
       "deriveMonitorAdmissionDecision",
     ],
+    scheduler: ["MonitorScheduler"],
     storage: [
       "MONITOR_SQLITE_SCHEMA_VERSION",
       "MonitorSchemaCompatibilityError",
@@ -178,7 +181,7 @@ export const v030PublicContract = Object.freeze({
     ],
   },
   configKeys: {
-    root: ["health", "now", "replay", "reservoir", "throttle", "transport"],
+    root: ["health", "now", "replay", "reservoir", "startup", "throttle", "transport"],
     reservoir: [
       "databasePath",
       "deadLetterRetentionMs",

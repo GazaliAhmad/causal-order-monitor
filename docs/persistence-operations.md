@@ -26,7 +26,15 @@ The monitor does not hide SQLite storage failures or convert a rejected write in
 
 `getOperatorSnapshot().storage` uses bounded file and filesystem metadata reads. It does not run `PRAGMA integrity_check` or scan ingress rows. Available capacity of 5% or less is classified `critical`; 15% or less is `elevated`; more is `normal`. In-memory databases and unavailable metadata report `unknown`. These levels are package operational signals, not substitutes for deployment-specific volume alerts.
 
-This is the current `v0.3.3` contract; it does not enforce a row, logical-byte, or filesystem-reserve admission quota. Future `v0.5.0` capacity work is governed by [ADR 0001](adr/0001-reservoir-capacity-admission-and-overflow.md), which keeps logical quotas distinct from physical database/WAL observations and host-level disk monitoring.
+This is the current `v0.4.0` contract; it does not enforce a row, logical-byte, or filesystem-reserve admission quota. Future `v0.5.0` capacity work is governed by [ADR 0001](adr/0001-reservoir-capacity-admission-and-overflow.md), which keeps logical quotas distinct from physical database/WAL observations and host-level disk monitoring.
+
+### Live reservoir ownership
+
+The supported live integration model has one owning monitor runtime for each SQLite reservoir. If the adapter manages that runtime, use the adapter as the sole lifecycle and replay owner. Do not run two monitor processes, runtimes, or adapters against the same live reservoir path, even when they are on the same host.
+
+The adapter's in-process replay serialization coordinates its own scheduler and caller operations only. It does not provide a cross-process lock, distributed lease, leader election, or network-filesystem coordination. Deploy each live owner with a unique reservoir path and an independently managed lifecycle.
+
+Backup, restore, relocation, and restart are stopped-database operations: stop ingress and replay, close the owner, complete the file operation, and reopen the path under one owner. They are separate from concurrent live ownership and must not be used to justify sharing a reservoir between active processes.
 
 ### Busy and locked databases
 

@@ -72,6 +72,7 @@ export interface ReplayPumpResult {
 export class TransportMonitorAdapter {
   readonly #runtime: MonitorRuntime;
   readonly #handlers: MonitorAdapterHandlers;
+  #activeReplayOperation: Promise<ReplayPumpResult | null> | null = null;
 
   constructor(
     handlers: MonitorAdapterHandlers,
@@ -186,6 +187,17 @@ export class TransportMonitorAdapter {
   }
 
   async pumpReplayBatch(limit?: number): Promise<ReplayPumpResult> {
+    if (this.#activeReplayOperation) {
+      return this.#activeReplayOperation.then(
+        (result) => result ?? this.#emptyReplayPumpResult(),
+      );
+    }
+    return this.#runReplayOperation(() => this.#pumpReplayBatchInternal(limit)).then(
+      (result) => result ?? this.#emptyReplayPumpResult(),
+    );
+  }
+
+  async #pumpReplayBatchInternal(limit?: number): Promise<ReplayPumpResult> {
     const batch = this.#runtime.claimManagedReplayBatch(limit);
     await this.#notifyReplayChange();
 
@@ -235,6 +247,13 @@ export class TransportMonitorAdapter {
   }
 
   async reconcileRecovery(limit?: number): Promise<ReplayPumpResult | null> {
+    if (this.#activeReplayOperation) {
+      return this.#activeReplayOperation;
+    }
+    return this.#runReplayOperation(() => this.#reconcileRecoveryInternal(limit));
+  }
+
+  async #reconcileRecoveryInternal(limit?: number): Promise<ReplayPumpResult | null> {
     const snapshot = this.#runtime.getReplaySnapshot();
     const reservoir = this.#runtime.getReservoirStats();
     const backlog = reservoir.totalPendingRows;
@@ -292,7 +311,7 @@ export class TransportMonitorAdapter {
       return null;
     }
 
-    return this.pumpReplayBatch(limit);
+    return this.#pumpReplayBatchInternal(limit);
   }
 
   close(): void {
@@ -301,6 +320,40 @@ export class TransportMonitorAdapter {
 
   async #notifyReplayChange(): Promise<void> {
     await this.#handlers.onReplayStateChange?.(this.#runtime.getReplaySnapshot());
+  }
+
+  #runReplayOperation(
+    operation: () => Promise<ReplayPumpResult | null>,
+  ): Promise<ReplayPumpResult | null> {
+    if (this.#activeReplayOperation) {
+      return this.#activeReplayOperation;
+    }
+
+    const activeOperation = operation();
+    this.#activeReplayOperation = activeOperation;
+    void activeOperation.then(
+      () => {
+        if (this.#activeReplayOperation === activeOperation) {
+          this.#activeReplayOperation = null;
+        }
+      },
+      () => {
+        if (this.#activeReplayOperation === activeOperation) {
+          this.#activeReplayOperation = null;
+        }
+      },
+    );
+    return activeOperation;
+  }
+
+  #emptyReplayPumpResult(): ReplayPumpResult {
+    const snapshot = this.#runtime.getReplaySnapshot();
+    return {
+      snapshot,
+      claimedCount: 0,
+      deliveredCount: 0,
+      completed: snapshot.state === "completed" || snapshot.state === "idle",
+    };
   }
 
   #hasReplayEligibleBacklog(

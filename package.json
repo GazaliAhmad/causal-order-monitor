@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -49,6 +49,10 @@
     "./storage": {
       "types": "./.build/src/storage.d.ts",
       "import": "./.build/src/storage.js"
+    },
+    "./scheduler": {
+      "types": "./.build/src/scheduler.d.ts",
+      "import": "./.build/src/scheduler.js"
     },
     "./testing": {
       "types": "./.build/src/testing.d.ts",
@@ -106,7 +110,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:export-contract && npm run test:compatibility-audit && npm run test:operator-snapshot-contract && npm run test:operator-edge-state-contract && npm run test:storage-pressure-contract && npm run test:boundary-contract && npm run test:snapshot-query-plan-contract && npm run test:schema-compatibility && npm run test:crash-boundary-contract && npm run test:storage-failure-contract && npm run test:restart-state-contract && npm run test:upgrade-restart-contract && npm run test:terminal-retention-contract && npm run test:wal-lifecycle-contract && npm run test:backup-restore-contract && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run test:concurrency-contract && npm run test:payload-boundary-contract && npm run test:shutdown-lifecycle-contract && npm run pack:check",
+    "ci": "npm run check && npm run test:export-contract && npm run test:compatibility-audit && npm run test:operator-snapshot-contract && npm run test:operator-edge-state-contract && npm run test:storage-pressure-contract && npm run test:boundary-contract && npm run test:snapshot-query-plan-contract && npm run test:schema-compatibility && npm run test:crash-boundary-contract && npm run test:storage-failure-contract && npm run test:restart-state-contract && npm run test:upgrade-restart-contract && npm run test:terminal-retention-contract && npm run test:wal-lifecycle-contract && npm run test:backup-restore-contract && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run test:concurrency-contract && npm run test:payload-boundary-contract && npm run test:shutdown-lifecycle-contract && npm run test:live-reservoir-ownership && npm run test:startup-health-policy && npm run test:scheduler && npm run test:replay-pump-concurrency && npm run test:packed-artifact-consumer && npm run test:packed-full-stack-lifecycle && npm run test:peer-version-matrix && npm run pack:check",
     "harness:monitor": "npm run build && node scripts/run-monitor-harness.mjs",
     "harness:order-outage": "npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 20m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-local",
     "prepack": "npm run publish:prepare && npm run build",
@@ -144,6 +148,13 @@
     "test:backup-restore-contract": "npm run build && node scripts/backup-restore-contract.mjs",
     "test:operator-snapshot-contract": "npm run build && node scripts/operator-snapshot-contract.mjs",
     "test:operator-edge-state-contract": "npm run build && node scripts/operator-edge-state-contract.mjs",
+    "test:packed-artifact-consumer": "node scripts/packed-artifact-consumer.mjs",
+    "test:peer-version-matrix": "node scripts/peer-version-matrix.mjs",
+    "test:replay-pump-concurrency": "npm run build && node scripts/replay-pump-concurrency.mjs",
+    "test:live-reservoir-ownership": "node scripts/live-reservoir-ownership-contract.mjs",
+    "test:startup-health-policy": "npm run build && node scripts/startup-health-policy-contract.mjs",
+    "test:scheduler": "npm run build && node scripts/scheduler-contract.mjs",
+    "test:packed-full-stack-lifecycle": "node scripts/packed-full-stack-lifecycle.mjs",
     "test:boundary-contract": "npm run build && node scripts/boundary-contract.mjs",
     "test:snapshot-query-plan-contract": "npm run build && node scripts/snapshot-query-plan-contract.mjs",
     "test:replay-safety": "npm run build && node scripts/replay-safety.mjs"
