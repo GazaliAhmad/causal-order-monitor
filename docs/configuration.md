@@ -24,6 +24,14 @@ For most deployments, use one of these paths:
 | `reservoir.deliveredRetentionMs` | `24h` | Delivered evidence retention |
 | `reservoir.deadLetterRetentionMs` | `168h` | Dead-letter evidence retention |
 | `reservoir.walAutoCheckpointPages` | `1000` | SQLite automatic WAL checkpoint threshold; `0` disables it |
+| `reservoir.capacity.maxSerializedEventBytes` | `null` | Maximum UTF-8 bytes in one complete stored event envelope; `null` disables it |
+| `reservoir.capacity.maxPendingRows` | `null` | Maximum rows in `pending` or `replaying`; `null` disables it |
+| `reservoir.capacity.maxPendingSerializedBytes` | `null` | Maximum logical stored-envelope bytes in `pending` or `replaying`; `null` disables it |
+| `reservoir.capacity.filesystemReserve` | `null` | Optional advisory filesystem reserve; `null` disables it |
+| `reservoir.capacity.filesystemReserve.minimumAvailableBytes` | — | Refuse when available bytes are at or below this threshold |
+| `reservoir.capacity.filesystemReserve.resumeAvailableBytes` | — | Resume only when available bytes reach this higher threshold |
+| `reservoir.capacity.filesystemReserve.unavailableEvidence` | — | `allow_logical_admission` or `refuse_admission` when evidence cannot be read |
+| `reservoir.capacity.overflowPolicy` | `reject_new` | Refuse new work before persistence; accepted pending work is never evicted |
 | `transport.heartbeatGraceMs` | `15s` | Transport heartbeat grace period |
 | `transport.reconnectBurstWindowMs` | `30s` | Reconnect burst observation window |
 | `transport.sourceLabel` | `@causal-order/transport` | Transport source label |
@@ -38,8 +46,11 @@ For most deployments, use one of these paths:
 | `replay.pauseLiveFlowDuringReplay` | `true` | Whether replay drain gates live flow |
 | `replay.retryBackoffMs` | `5s` | Failed replay retry delay |
 | `startup.healthPolicy` | `optimistic` | Startup forwarding policy |
+| `lifecycle.queueCapacity` | `1024` | Maximum observations waiting to begin dispatch |
+| `lifecycle.overflowPolicy` | `drop_oldest` | Drop the oldest queued observation when the queue is full |
+| `lifecycle.shutdownFlushTimeoutMs` | `1s` | Default timeout for explicit `lifecycle.flush()` calls |
 
-The default database parent directory is created automatically. `startup.healthPolicy: "conservative"` keeps ingress buffered until online evidence has been observed for transport, dedupe, and causal-order. That startup gate is separate from replay recovery confirmation and does not bypass restart backlog protection.
+The default database parent directory is created automatically. Capacity limits are opt-in. A zero limit is enabled and refuses any admission that would consume that dimension; it is not treated as disabled. Exact-limit admissions are accepted, while values above the limit are refused. `startup.healthPolicy: "conservative"` keeps ingress buffered until online evidence has been observed for transport, dedupe, and causal-order. That startup gate is separate from replay recovery confirmation and does not bypass restart backlog protection.
 
 ## Complete JSON Example
 
@@ -53,7 +64,18 @@ The default database parent directory is created automatically. `startup.healthP
     "pruneBatchSize": 1000,
     "deliveredRetentionMs": "24h",
     "deadLetterRetentionMs": "168h",
-    "walAutoCheckpointPages": 1000
+    "walAutoCheckpointPages": 1000,
+    "capacity": {
+      "maxSerializedEventBytes": "1048576",
+      "maxPendingRows": 100000,
+      "maxPendingSerializedBytes": "1073741824",
+      "filesystemReserve": {
+        "minimumAvailableBytes": "5368709120",
+        "resumeAvailableBytes": "6442450944",
+        "unavailableEvidence": "refuse_admission"
+      },
+      "overflowPolicy": "reject_new"
+    }
   },
   "transport": {
     "heartbeatGraceMs": "15s",
@@ -77,11 +99,24 @@ The default database parent directory is created automatically. `startup.healthP
     "pauseLiveFlowDuringReplay": true,
     "retryBackoffMs": "5s"
   },
-  "startup": { "healthPolicy": "optimistic" }
+  "startup": { "healthPolicy": "optimistic" },
+  "lifecycle": {
+    "queueCapacity": 1024,
+    "overflowPolicy": "drop_oldest",
+    "shutdownFlushTimeoutMs": "1s"
+  }
 }
 ```
 
 JSON duration values may be integer milliseconds or strings such as `15000ms`, `30s`, `5m`, or `4h`.
+
+Capacity byte values are different from durations: use a non-negative safe JSON integer or an unsigned base-10 integer string with no whitespace, sign, fraction, exponent, or unit suffix. Resolved byte limits are `bigint`; programmatic configuration should use `bigint`. `maxPendingRows` must be a non-negative safe JSON integer. The serialized-event measurement covers the complete BigInt-safe event envelope stored in `payload_json`, not only `event.payload`.
+
+Pending row and byte checks, insertion, and accounting commit in one `BEGIN IMMEDIATE` transaction. `pending` and `replaying` rows—including retry-waiting rows—consume quota. Delivered and dead-letter rows do not, although their retained evidence still consumes physical SQLite storage. Logical byte limits exclude SQLite pages, indexes, WAL, terminal/history tables, and filesystem overhead.
+
+Filesystem reserve evidence is sampled before a capacity-enabled append and is advisory rather than transactionally exact. Available bytes at or below `minimumAvailableBytes` latch refusal; the latch clears only after a successful reading reaches `resumeAvailableBytes`, which must be greater than the minimum. A missing reading never clears an existing low-space latch. Without a latch, `allow_logical_admission` continues through logical checks, while `refuse_admission` fails closed until evidence returns. This guard does not replace handling real SQLite full, read-only, WAL, contention, or I/O failures.
+
+Lifecycle queue capacity must be a positive safe integer. The v0.5 overflow policy is fixed to `drop_oldest`; active listener calls are never cancelled. The shutdown flush timeout is a non-negative duration and applies to explicit `lifecycle.flush()`, not the synchronous owner `close()` method.
 
 ## Loading Configuration
 

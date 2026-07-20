@@ -1,4 +1,4 @@
-export const monitorPackageVersion = "0.4.0";
+export const monitorPackageVersion = "0.5.0";
 
 export type MonitorImplementationStatus = "replay_operational";
 
@@ -16,10 +16,20 @@ import { ThrottleController as ThrottleControllerImpl } from "./throttle/Throttl
 export {
   createDefaultMonitorNow,
   createDefaultMonitorConfig,
+  type MonitorCapacityConfig,
+  type MonitorCapacityOverflowPolicy,
+  type MonitorFilesystemReserveConfig,
+  type MonitorFilesystemUnavailableEvidencePolicy,
   type MonitorComponentHealthConfig,
   type MonitorConfig,
   type MonitorHealthConfig,
   type MonitorJsonComponentHealthConfig,
+  type MonitorJsonByteLimit,
+  type MonitorJsonCapacityConfig,
+  type MonitorJsonFilesystemReserveConfig,
+  type MonitorJsonLifecycleConfig,
+  type MonitorLifecycleConfig,
+  type MonitorLifecycleOverflowPolicy,
   type MonitorJsonConfig,
   type MonitorJsonDuration,
   type MonitorJsonHealthConfig,
@@ -34,6 +44,7 @@ export {
   type MonitorThrottleTierConfig,
   type MonitorTransportConfig,
 } from "./types/config.js";
+export * from "./types/lifecycle.js";
 export {
   DEFAULT_MONITOR_CONFIG_FILE,
   MONITOR_CONFIG_ENV_VAR,
@@ -71,6 +82,11 @@ export {
   type ReplaySessionSnapshot,
   type ReservoirStats,
   type MonitorAdmissionSnapshotV1,
+  type MonitorCapacityAdmissionPosture,
+  type MonitorCapacityFacet,
+  type MonitorCapacityLastRefusalV1,
+  type MonitorCapacitySnapshotSchema,
+  type MonitorCapacitySnapshotV1,
   type MonitorOperatorComponent,
   type MonitorOperatorSnapshotSchema,
   type MonitorOperatorSnapshotV1,
@@ -88,6 +104,7 @@ export {
   deriveMonitorAdmissionDecision,
   MonitorAdmissionRefusedError,
   MonitorBoundaryError,
+  MonitorCapacityRefusedError,
   MonitorClosedError,
   MonitorIndeterminateOutcomeError,
   type MonitorAdmissionDecision,
@@ -95,6 +112,9 @@ export {
   type MonitorBoundaryFailure,
   type MonitorBoundaryOutcome,
   type MonitorBoundaryRecommendedAction,
+  type MonitorCapacityLimitingDimension,
+  type MonitorCapacityReasonCode,
+  type MonitorCapacityRefusalEvidence,
 } from "./boundary.js";
 export {
   createMonitorRuntime,
@@ -107,6 +127,7 @@ export {
   type PruneResult,
   type ReservoirLifecycleStats,
   type ReservoirReplayEntry,
+  type MonitorStorageEvidenceReader,
   type WalCheckpointMode,
   type WalCheckpointResult,
 } from "./storage/SQLiteReservoir.js";

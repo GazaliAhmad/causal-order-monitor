@@ -114,6 +114,36 @@ assert.match(
   /type MonitorEventTimingEvidence/,
   "the types subpath should export neutral event timing evidence",
 );
+assert.match(
+  rootDts,
+  /type MonitorCapacitySnapshotV1/,
+  "the root declaration surface should export the versioned capacity snapshot",
+);
+assert.match(
+  typesDts,
+  /type MonitorCapacityFacet/,
+  "the types subpath should export the capacity inspection facet",
+);
+assert.match(
+  rootDts,
+  /type MonitorFilesystemReserveConfig/,
+  "the root declaration surface should export filesystem reserve configuration",
+);
+assert.match(
+  rootDts,
+  /export \* from "\.\/types\/lifecycle\.js"/,
+  "the root declaration surface should export the lifecycle facet",
+);
+assert.match(
+  readFileSync(resolve(".build/src/types/lifecycle.d.ts"), "utf8"),
+  /interface MonitorLifecycleEvents/,
+  "the root declaration surface should export the typed lifecycle catalog",
+);
+assert.match(
+  typesDts,
+  /MonitorLifecycleSnapshotV1/,
+  "the types subpath should export the lifecycle snapshot",
+);
 
 const rootAndSubpathChecks = [
   {
@@ -270,6 +300,7 @@ assertOwnExport(root, "ReplayOwnershipError", "@causal-order/monitor");
 for (const exportName of [
   "MonitorAdmissionRefusedError",
   "MonitorBoundaryError",
+  "MonitorCapacityRefusedError",
   "MonitorClosedError",
   "MonitorIndeterminateOutcomeError",
   "classifyMonitorBoundaryFailure",
@@ -277,9 +308,14 @@ for (const exportName of [
 ]) {
   assertOwnExport(root, exportName, "@causal-order/monitor");
 }
+assertOwnExport(runtime, "MonitorCapacityRefusedError", "@causal-order/monitor/runtime");
+assertOwnExport(transport, "MonitorCapacityRefusedError", "@causal-order/monitor/transport");
+assert.match(rootDts, /type MonitorCapacityConfig/);
+assert.match(typesDts, /type MonitorCapacityConfig/);
 
 for (const exportName of [
   "MONITOR_SQLITE_SCHEMA_VERSION",
+  "MonitorCapacityAccountingError",
   "MonitorSchemaCompatibilityError",
   "MonitorSchemaError",
   "MonitorSchemaMigrationError",
@@ -287,7 +323,7 @@ for (const exportName of [
 ]) {
   assertOwnExport(storage, exportName, "@causal-order/monitor/storage");
 }
-assert.equal(storage.MONITOR_SQLITE_SCHEMA_VERSION, 2);
+assert.equal(storage.MONITOR_SQLITE_SCHEMA_VERSION, 3);
 
 assert.ok(
   packageJson.exports["./replay"]?.types,

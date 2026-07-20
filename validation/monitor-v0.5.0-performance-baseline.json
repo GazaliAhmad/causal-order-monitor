@@ -1,0 +1,529 @@
+{
+  "schema": "causal-order-monitor/performance-baseline",
+  "version": 1,
+  "validity": "valid",
+  "generatedAt": "2026-07-19T15:29:15.458Z",
+  "scope": "Repository-local comparative baseline; results are not universal throughput claims.",
+  "environment": {
+    "label": "win32-10.0.26200-x64-node24.15.0",
+    "node": "v24.15.0",
+    "npm": "11.17.0",
+    "os": {
+      "platform": "win32",
+      "release": "10.0.26200",
+      "architecture": "x64"
+    },
+    "cpu": {
+      "model": "12th Gen Intel(R) Core(TM) i7-1255U",
+      "logicalCores": 12
+    },
+    "memoryBytes": {
+      "total": "16858529792",
+      "freeAtReport": "2230636544"
+    },
+    "filesystem": {
+      "placement": "OS temporary directory on the current host",
+      "type": "not portably detectable by Node.js",
+      "blockSizeBytes": "4096",
+      "totalBytes": "510392602624",
+      "availableBytesAtReport": "128828006400"
+    }
+  },
+  "artifact": {
+    "kind": "working-tree TypeScript build",
+    "entrypoint": ".build/src/index.js",
+    "package": "@causal-order/monitor",
+    "packageVersion": "0.4.0",
+    "gitCommit": "060b248198870f8a72ed3619848db825ee71c46d",
+    "workingTree": "may include uncommitted release-candidate changes"
+  },
+  "dependencies": {
+    "nodeSqlite": "3.51.3",
+    "installed": {
+      "typescript": "6.0.3",
+      "@types/node": "25.9.4",
+      "@causal-order/dedupe": "1.1.1",
+      "@causal-order/transport": "0.1.2",
+      "causal-order": "1.0.0"
+    },
+    "declaredPeers": {
+      "@causal-order/dedupe": "^1.1.1",
+      "@causal-order/transport": "^0.1.2",
+      "causal-order": "^1.0.0"
+    }
+  },
+  "configuration": {
+    "profile": "baseline",
+    "warmup": 1,
+    "iterations": 5,
+    "events": 200,
+    "batchSize": 32,
+    "payloadBytes": 256,
+    "concurrency": 1,
+    "databasePlacement": "OS temporary directory; one fresh SQLite database per sample",
+    "cleanup": "all sample databases removed after the complete run",
+    "payloadDistribution": "fixed JSON object with 256-character ASCII body plus event metadata",
+    "timingBoundary": "scenario-specific operation only; setup and post-operation correctness assertions are excluded where separable; compare only identical harness versions and profiles"
+  },
+  "comparisonPolicy": {
+    "sameEnvironmentRequired": true,
+    "repeatedRunsRequired": 3,
+    "reviewMedianIncreasePercent": 25,
+    "reviewP95IncreasePercent": 35,
+    "automaticTimingFailure": false
+  },
+  "correctness": {
+    "status": "passed",
+    "rule": "The report is written only after every workload assertion passes; timing thresholds do not replace correctness."
+  },
+  "cases": [
+    {
+      "family": "ingress",
+      "name": "capacity-disabled",
+      "correctness": "passed",
+      "workload": {
+        "eventsPerSample": 200,
+        "capacity": {
+          "maxSerializedEventBytes": null,
+          "maxPendingRows": null,
+          "maxPendingSerializedBytes": null,
+          "filesystemReserve": null,
+          "overflowPolicy": "reject_new"
+        }
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 447.6,
+          "p95": 660.842,
+          "minimum": 262.415,
+          "maximum": 660.842
+        },
+        "operationsPerSecond": {
+          "median": 446.828,
+          "p05": 302.644
+        }
+      },
+      "evidence": {
+        "pendingRows": 0,
+        "refused": 0
+      }
+    },
+    {
+      "family": "ingress",
+      "name": "capacity-enabled-below-limits",
+      "correctness": "passed",
+      "workload": {
+        "eventsPerSample": 200,
+        "capacity": {
+          "maxSerializedEventBytes": null,
+          "maxPendingRows": 201,
+          "maxPendingSerializedBytes": "1000000000",
+          "filesystemReserve": null,
+          "overflowPolicy": "reject_new"
+        }
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 414.575,
+          "p95": 422.6,
+          "minimum": 325.116,
+          "maximum": 422.6
+        },
+        "operationsPerSecond": {
+          "median": 482.422,
+          "p05": 473.261
+        }
+      },
+      "evidence": {
+        "pendingRows": 0,
+        "refused": 0
+      }
+    },
+    {
+      "family": "ingress",
+      "name": "saturated-refusal",
+      "correctness": "passed",
+      "workload": {
+        "attemptsPerSample": 200,
+        "maxPendingRows": 1
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 30.8,
+          "p95": 51.842,
+          "minimum": 17.642,
+          "maximum": 51.842
+        },
+        "operationsPerSecond": {
+          "median": 6493.506,
+          "p05": 3857.876
+        }
+      },
+      "evidence": {
+        "pendingRows": 1,
+        "refused": 200
+      }
+    },
+    {
+      "family": "replay",
+      "name": "claim-deliver-ack-final-drain",
+      "correctness": "passed",
+      "workload": {
+        "backlogRows": 200,
+        "batchSize": 32
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 46.06,
+          "p95": 55.116,
+          "minimum": 35.282,
+          "maximum": 55.116
+        },
+        "operationsPerSecond": {
+          "median": 4342.162,
+          "p05": 3628.71
+        }
+      },
+      "evidence": {
+        "delivered": 200,
+        "finalPendingRows": 0,
+        "batchSize": 32
+      }
+    },
+    {
+      "family": "prune",
+      "name": "expired-pending",
+      "correctness": "passed",
+      "workload": {
+        "rowsPerSample": 200,
+        "pruneBatchSize": 32
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 10.284,
+          "p95": 14.403,
+          "minimum": 8.278,
+          "maximum": 14.403
+        },
+        "operationsPerSecond": {
+          "median": 19447.686,
+          "p05": 13885.996
+        }
+      },
+      "evidence": {
+        "affected": 200,
+        "calls": 7,
+        "bound": 32
+      }
+    },
+    {
+      "family": "prune",
+      "name": "terminal-delivered",
+      "correctness": "passed",
+      "workload": {
+        "rowsPerSample": 200,
+        "pruneBatchSize": 32
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 7.881,
+          "p95": 13.682,
+          "minimum": 5.704,
+          "maximum": 13.682
+        },
+        "operationsPerSecond": {
+          "median": 25377.49,
+          "p05": 14617.746
+        }
+      },
+      "evidence": {
+        "affected": 200,
+        "calls": 7,
+        "bound": 32
+      }
+    },
+    {
+      "family": "startup",
+      "name": "fresh",
+      "correctness": "passed",
+      "workload": {
+        "databaseState": "absent"
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 17.318,
+          "p95": 17.908,
+          "minimum": 14.763,
+          "maximum": 17.908
+        },
+        "operationsPerSecond": {
+          "median": 57.743,
+          "p05": 55.841
+        }
+      },
+      "evidence": {
+        "schemaVersion": 3,
+        "pendingRows": 0
+      }
+    },
+    {
+      "family": "startup",
+      "name": "restart-with-backlog",
+      "correctness": "passed",
+      "workload": {
+        "backlogRows": 200
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 4.694,
+          "p95": 6.342,
+          "minimum": 2.199,
+          "maximum": 6.342
+        },
+        "operationsPerSecond": {
+          "median": 213.038,
+          "p05": 157.679
+        }
+      },
+      "evidence": {
+        "recoveredPendingRows": 200,
+        "recoveryRequired": true
+      }
+    },
+    {
+      "family": "inspection",
+      "name": "raw",
+      "correctness": "passed",
+      "workload": {
+        "inspectionsPerSample": 200,
+        "backlogRows": 200
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 85.939,
+          "p95": 130.209,
+          "minimum": 79.323,
+          "maximum": 130.209
+        },
+        "operationsPerSecond": {
+          "median": 2327.232,
+          "p05": 1535.992
+        }
+      },
+      "evidence": {
+        "inspection": "raw",
+        "backlogRows": 200
+      }
+    },
+    {
+      "family": "inspection",
+      "name": "inspected",
+      "correctness": "passed",
+      "workload": {
+        "inspectionsPerSample": 200,
+        "backlogRows": 200
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 100.605,
+          "p95": 113.002,
+          "minimum": 83.361,
+          "maximum": 113.002
+        },
+        "operationsPerSecond": {
+          "median": 1987.973,
+          "p05": 1769.88
+        }
+      },
+      "evidence": {
+        "inspection": "inspected",
+        "backlogRows": 200
+      }
+    },
+    {
+      "family": "inspection",
+      "name": "operator-v1",
+      "correctness": "passed",
+      "workload": {
+        "inspectionsPerSample": 200,
+        "backlogRows": 200
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 236.803,
+          "p95": 299.471,
+          "minimum": 102.768,
+          "maximum": 299.471
+        },
+        "operationsPerSecond": {
+          "median": 844.584,
+          "p05": 667.844
+        }
+      },
+      "evidence": {
+        "inspection": "operator-v1",
+        "backlogRows": 200
+      }
+    },
+    {
+      "family": "scheduler",
+      "name": "pacing-coalescing-retry-shutdown",
+      "correctness": "passed",
+      "workload": {
+        "ticksPerSample": 2,
+        "concurrentTickRequests": 2,
+        "retryDeadlineDelayMs": 37
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 0.088,
+          "p95": 0.658,
+          "minimum": 0.06,
+          "maximum": 0.658
+        },
+        "operationsPerSecond": {
+          "median": 22727.273,
+          "p05": 3039.514
+        }
+      },
+      "evidence": {
+        "maximumInFlightReplay": 1,
+        "configuredIntervalsMs": {
+          "health": 20,
+          "replay": 10,
+          "prune": 30
+        },
+        "retryDeadlineDelayMs": 37,
+        "healthRuns": 2,
+        "replayRuns": 2,
+        "pruneRuns": 2,
+        "adapterCloseCount": 1
+      }
+    },
+    {
+      "family": "lifecycle",
+      "name": "no-listener",
+      "correctness": "passed",
+      "workload": {
+        "eventsPerSample": 200,
+        "listenerMode": "no-listener"
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 1.529,
+          "p95": 1.986,
+          "minimum": 1.337,
+          "maximum": 1.986
+        },
+        "operationsPerSecond": {
+          "median": 130804.447,
+          "p05": 100704.935
+        }
+      },
+      "evidence": {
+        "published": 200,
+        "received": 0,
+        "dropped": 0,
+        "queueCapacity": 202
+      }
+    },
+    {
+      "family": "lifecycle",
+      "name": "fast-listener",
+      "correctness": "passed",
+      "workload": {
+        "eventsPerSample": 200,
+        "listenerMode": "fast-listener"
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 1.829,
+          "p95": 2.777,
+          "minimum": 1.577,
+          "maximum": 2.777
+        },
+        "operationsPerSecond": {
+          "median": 109349.371,
+          "p05": 72020.166
+        }
+      },
+      "evidence": {
+        "published": 200,
+        "received": 200,
+        "dropped": 0,
+        "queueCapacity": 202
+      }
+    },
+    {
+      "family": "lifecycle",
+      "name": "slow-listener",
+      "correctness": "passed",
+      "workload": {
+        "eventsPerSample": 200,
+        "listenerMode": "slow-listener"
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 1.607,
+          "p95": 1.658,
+          "minimum": 1.374,
+          "maximum": 1.658
+        },
+        "operationsPerSecond": {
+          "median": 124455.507,
+          "p05": 120627.262
+        }
+      },
+      "evidence": {
+        "published": 200,
+        "received": 200,
+        "dropped": 0,
+        "queueCapacity": 202
+      }
+    },
+    {
+      "family": "lifecycle",
+      "name": "controlled-overflow",
+      "correctness": "passed",
+      "workload": {
+        "eventsPerSample": 200,
+        "listenerMode": "controlled-overflow"
+      },
+      "summary": {
+        "sampleCount": 5,
+        "durationMs": {
+          "median": 1.399,
+          "p95": 1.863,
+          "minimum": 1.283,
+          "maximum": 1.863
+        },
+        "operationsPerSecond": {
+          "median": 142959.257,
+          "p05": 107353.731
+        }
+      },
+      "evidence": {
+        "published": 200,
+        "received": 50,
+        "dropped": 150,
+        "queueCapacity": 50
+      }
+    }
+  ],
+  "rawReport": "artifacts\\validation\\monitor-v0.5.0-performance-baseline.json"
+}

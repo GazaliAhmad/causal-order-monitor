@@ -2,6 +2,8 @@
 
 Keep accepting events during bounded downstream outages, persist them locally, and replay them through deduplication before causal ordering resumes. `@causal-order/monitor` adds health-aware routing, controlled recovery, and operator visibility to a `causal-order` pipeline.
 
+Published package version: `v0.5.0`
+
 ## Stack Position
 
 ```text
@@ -54,7 +56,7 @@ The monitor is not:
 
 Use `MonitorRuntime` only when deliberate manual control over ingress, health, replay, and storage is required. Adapter-managed replay and manual runtime replay must not be mixed on the same runtime; invalid mixed control fails with `ReplayOwnershipError`.
 
-One live SQLite reservoir must have one owning runtime or adapter process. Adapter call serialization is process-local and does not coordinate other runtimes or processes.
+One live SQLite reservoir has one owning `MonitorRuntime` or `TransportMonitorAdapter` process. Adapter call serialization is process-local; it is not a cross-process lock, leader-election mechanism, or coordination mechanism for other runtimes or processes.
 
 See the [API reference](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/api-reference.md) for the lower-level runtime example, scheduler, and replay-operation details.
 
@@ -125,9 +127,9 @@ Replay waits for configured recovery confirmation. Failures apply retry backoff,
 | Accepted buffered work | `202 Accepted` |
 | Protective refusal | `503 Service Unavailable` |
 
-`TransportMonitorAdapter.ingest()` returns an `admission` object for accepted work. Protective refusal throws `MonitorAdmissionRefusedError` before persistence, with code `ERR_MONITOR_ADMISSION_REFUSED` and `httpStatus: 503`.
+`TransportMonitorAdapter.ingest()` returns an `admission` object for accepted work. Routing-policy refusal throws `MonitorAdmissionRefusedError` before persistence, with code `ERR_MONITOR_ADMISSION_REFUSED` and `httpStatus: 503`. Configured logical-capacity or filesystem-reserve refusal instead throws `MonitorCapacityRefusedError`, with code `ERR_MONITOR_CAPACITY_REFUSED`, `httpStatus: 503`, the limiting dimension, stable reason evidence, and retry guidance. Neither refusal persists the rejected event.
 
-Ordinary buffering and protective stops do not use `429`. Client, tenant, quota, and commercial rate-limit policies are outside the monitor’s scope and should be enforced by the application or API gateway.
+Ordinary buffering and protective stops—including configured reservoir-capacity refusal—do not use `429`; protective refusal uses `503`. Client-, tenant-, and commercial-quota or rate-limit policies remain outside the monitor’s scope and should be enforced by the application or API gateway.
 
 ### Retention
 
@@ -139,6 +141,7 @@ Common settings are:
 
 - `reservoir.databasePath`, `rollingBufferWindowMs`, and `fullOutageMaxWindowMs`
 - `reservoir.pruneBatchSize`, `deliveredRetentionMs`, and `deadLetterRetentionMs`
+- `reservoir.capacity.*` logical limits and optional filesystem reserve
 - `health.*.degradedAfterMs` and `health.*.offlineAfterMs`
 - `throttle.*` tier limits
 - `replay.healthConfirmationHeartbeats` and `replay.retryBackoffMs`
@@ -186,6 +189,12 @@ See [deployment guidance](https://github.com/GazaliAhmad/causal-order-monitor/bl
 
 Its contract is directly JSON-serializable; millisecond and byte quantities are represented as decimal strings. It exposes health, admission, backlog, replay, and bounded storage state. Consumers must check both discriminator fields before interpreting the snapshot. See the [operator snapshot migration guide](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/operator-snapshot-v1.md) for the older unversioned inspection surface.
 
+Capacity has a separate versioned inspection surface at `monitor.capacity.getSnapshot()`. It reports configured logical/reserve limits, usage, utilization, filesystem evidence, last refusal, and bounded process counters without changing the operator snapshot v1 shape.
+
+Runtime and adapter owners also share a typed `monitor.lifecycle` facet for bounded, non-awaited operational observations. Listeners are failure-isolated, evidence is immutable and payload-free, slow observers cause inspectable `drop_oldest` overflow rather than unbounded queue growth, and `flush()` provides an explicit bounded best-effort drain before close. Lifecycle observations are not durable audit or recovery authority.
+
+Version 0.5.0 emits the 20-event catalog from truthful runtime, adapter, replay, retention, health, pressure, checkpoint, and scheduler boundaries. Handler completion remains distinct from committed delivery acknowledgement, and indeterminate accepted outcomes remain storage-reconciliation cases.
+
 ## Subpath Imports
 
 Official advanced surfaces should be imported from their published subpaths.
@@ -218,6 +227,8 @@ See [root-to-subpath migrations](https://github.com/GazaliAhmad/causal-order-mon
 - [Root-to-subpath migration](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/root-subpaths.md)
 - [Operator snapshot v1 migration](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/operator-snapshot-v1.md)
 - [Timing evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/timing-evidence.md)
+- [Performance baselines](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/performance-baselines.md)
+- [Sustained-load and soak qualification](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/soak-qualification.md)
 - [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
 - [Release history](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/CHANGELOG.md)
 

@@ -32,7 +32,7 @@ This is not a storage capacity floor. Add measured headroom for SQLite metadata,
 - Leave headroom for prune work, recovery replay, and other host processes.
 - Account for reconnect bursts and node jitter above long-run average ingress.
 
-The monitor has been validated with representative 1 KiB, 64 KiB, and 1 MiB payloads, but those are compatibility examples rather than a universal size or throughput guarantee. Set an application-owned payload limit from measured ingress, outage duration, storage, and replay capacity.
+The monitor has been validated with representative 1 KiB, 64 KiB, and 1 MiB payloads, but those are compatibility examples rather than a universal size or throughput guarantee. Set `reservoir.capacity.maxSerializedEventBytes`, `maxPendingRows`, and `maxPendingSerializedBytes` from measured ingress, outage duration, storage, and replay capacity. Configure `filesystemReserve.minimumAvailableBytes` below a higher `resumeAvailableBytes` threshold when early low-space refusal is appropriate, and choose explicitly whether unavailable evidence permits logical admission or refuses it. The reserve is advisory: retain host alerts and handling for actual SQLite storage failures.
 
 ## Prune and Recovery Overlap
 

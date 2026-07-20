@@ -12,6 +12,45 @@ npm run ci
 
 The default CI contract includes both 10,000-row threshold and retention/admission pressure scenarios so backlog-dependent ingress regressions remain release-blocking.
 
+## Performance Baseline
+
+Run all v0.5.0 comparative benchmark families with:
+
+```bash
+npm run benchmark:monitor
+```
+
+The detailed report is written under ignored `artifacts/validation/`. To retain a review summary explicitly, run:
+
+```bash
+npm run benchmark:monitor -- --summary-output validation/monitor-v0.5.0-performance-baseline.json
+```
+
+`npm run test:performance-baseline-contract` runs a smaller profile in CI. Both profiles cover capacity-disabled/enabled ingress, saturated refusal, replay drain, bounded pruning, startup/restart, three inspection surfaces, scheduler pacing/coalescing/shutdown, and four lifecycle-listener modes. A report is emitted only after correctness passes. Timing comparison requires matching environments and repeated runs; see [the performance baseline methodology](docs/performance-baselines.md).
+
+## Phase 6 Sustained-load Qualification
+
+Run the deterministic accelerated smoke profile with:
+
+```bash
+npm run test:monitor-phase6-smoke
+```
+
+The explicit qualification profiles are:
+
+- `npm run test:monitor-phase6-medium` — 2-hour horizon at 240×
+- `npm run test:monitor-phase6-long` — 8-hour horizon at 360×
+- `npm run test:monitor-phase6-sustained` — 10 minutes continuously at 1×
+- `node scripts/monitor-phase6-soak.mjs --profile wallclock` — explicit 8-hour 1× release-host burn-in
+
+Accelerated horizons are not continuous wall-clock claims. Every profile uses eight nodes and correctness-gates capacity refusal/upstream ownership, replay through dedupe, an exact persisted retry deadline, scheduler pacing, repeated recovery, slow/failing lifecycle observers, restart overlap, ordering, final drain, resource trends, shutdown, SQLite integrity, and reopen. See [the retained operating envelopes and sizing method](docs/soak-qualification.md).
+
+Validate the four tracked concise summaries with:
+
+```bash
+npm run test:phase6-soak-summary-contract
+```
+
 The v0.4.0 release retains the v0.3.0 consumer contract in `scripts/fixtures/v0.3.0-public-contract.mjs`. `npm run test:compatibility-audit` verifies every published runtime namespace, selected generated declaration literals and operation signatures, public class methods, configuration keys, raw and inspected snapshot shapes, operator snapshot schema/version and required fields, operation result shapes, and every schema-v2 table, column, and named index. The fixture is independent of current source enumeration so an accidental removal or reinterpretation cannot silently rewrite the expected baseline.
 
 Individual checks are available through:
@@ -98,15 +137,18 @@ The run passed every fault phase, delivered all `427737` generated unique events
 
 ## Release Evidence
 
-The v0.4.0 release candidate passed:
+The package published as `v0.5.0` passes:
 
-- the complete CI and release-check contracts
-- packed-artifact import and declaration validation
-- the supported peer-version matrix
-- the packed full-stack startup, outage, restart, retry, and replay lifecycle
-- scheduler, ownership, startup-health, replay-concurrency, and inherited compatibility contracts
+- the complete CI and release-check contracts, including every focused Phase 6 capacity, lifecycle, benchmark, auxiliary-growth, retained-summary, and accelerated smoke gate
+- packed-artifact imports, declarations, version identity, capacity errors/snapshots, and the 20-event lifecycle catalog
+- the supported minimum and declared-range-latest peer-version matrix
+- the packed full-stack capacity refusal, lifecycle observation, startup, outage, restart, retry, replay-through-dedupe, and resumed-delivery scenario
+- all inherited compatibility, schema migration, accounting, crash, restart, replay, storage, ownership, scheduler, payload, concurrency, retention, and shutdown contracts
+- retained environment-labelled benchmark and eight-node smoke, medium, accelerated eight-hour-horizon, and ten-minute continuous-load summaries
 
-The v0.4.0 release artifact is the package version prepared by the current repository metadata. Publication and registry verification are external release steps.
+Repository metadata, the packed artifact, and the npm release agree on `0.5.0`.
+
+The v0.4.0 packed-artifact, supported-stack, scheduler, ownership, startup-health, replay-concurrency, and compatibility evidence remains the inherited regression baseline.
 
 The retained v0.3.3 compatibility-closure evidence remains historical:
 

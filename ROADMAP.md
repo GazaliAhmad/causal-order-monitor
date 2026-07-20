@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the `v0.4.0` repository release and its completed stack-integration work while preserving the earlier runtime and operational decisions.
+This file records the published `v0.5.0` repository release and its completed operational-behavior, performance, and soak-qualification work while preserving the earlier runtime and stack-integration decisions.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -17,14 +17,17 @@ This file records the `v0.4.0` repository release and its completed stack-integr
 
 ## Current Release
 
-- Status: `v0.4.0` is the current npm and repository release.
+- Status: `v0.5.0` is the current npm and repository release.
+- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
+- The `v0.4.0` stack-integration release remains the inherited packed-artifact, peer-matrix, replay, ownership, startup, scheduler, and recovery baseline.
 - The `v0.3.3` compatibility-closure release remains the preserved v0.3.x baseline.
 - The `v0.3.3` release closes the planned v0.3.x line with a retained v0.3.0 public-contract fixture, complete compatibility coverage, and explicit migration guidance for the versioned JSON-safe operator snapshot.
-- Stable boundary errors classify shutdown, storage contention/capacity/access/I/O failures, protective refusal, and persisted-but-unobserved adapter completion without weakening SQLite recovery authority.
-- Snapshot generation retains four fixed index-backed reservoir aggregations and SQLite schema version 2.
+- Transactional capacity admission, restart-safe logical accounting, bounded lifecycle observation, and retained performance/soak evidence define the published v0.5.0 operational boundary.
+- Stable boundary errors classify shutdown, configured capacity refusal, storage contention/capacity/access/I/O failures, protective refusal, and persisted-but-unobserved adapter completion without weakening SQLite recovery authority.
+- Snapshot generation retains four fixed index-backed reservoir aggregations and SQLite schema version 3 with transactional pending-row and serialized-byte accounting.
 - The policy-neutral `MonitorEventTimingEvidence` handoff remains available at the root and `/types` entrypoints without monitor prescribing business policy.
 
-## Planned SemVer Themes
+## SemVer Themes
 
 | Version | Theme |
 | --- | --- |
@@ -37,7 +40,6 @@ This file records the `v0.4.0` repository release and its completed stack-integr
 | `v1.0.0` | Stable recovery contract |
 
 The sequence is intentional: validate the real package stack and enforce correctness first; qualify operational behavior and performance before freezing public semantics; then complete platform, ecosystem, and release readiness before the stable contract.
-- The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 
 ## Package Intent
 
@@ -448,23 +450,23 @@ Exit criteria:
 
 Phase 5 is complete in `v0.4.0`; its packed-artifact, peer, replay, ownership, startup, scheduler, lifecycle, compatibility, and CI evidence is retained in the internal `.local/v0.4.x/0.4.0/` records.
 
-## Phase 6: Operational Behavior, Performance, and Soak Qualification (Target: `v0.5.0`)
+## Phase 6: Operational Behavior, Performance, and Soak Qualification (Published as `v0.5.0`)
 
-- implement the accepted [ADR 0001: Reservoir Capacity, Admission, and Overflow Semantics](docs/adr/0001-reservoir-capacity-admission-and-overflow.md) before capacity code ships
-- add opt-in pending-row, payload-size, and logical-byte/free-space admission limits with stable refusal evidence
-- use `reject_new` as the initial safe overflow behavior; do not silently evict previously accepted pending work
-- qualify an optional supported scheduler with one in-flight replay pump, actual replay pacing, retry-deadline awareness, periodic health refresh/pruning, cancellation, and inspectable health
-- add a typed, bounded, non-awaited, failure-isolated `monitor.lifecycle.subscribe(event, listener)` contract for ingress, storage, delivery, replay, retention, health, pressure, and duration facts without requiring a telemetry vendor
-- distinguish `deliveryAttempted`, `deliveryHandlerCompleted`, `deliveryAcknowledged`, `deliveryFailed`, and `deliveryIndeterminate`; emit committed-state events only after the corresponding SQLite mutation commits
-- isolate listener exceptions and rejected promises from recovery outcomes; monitor operations enqueue but never await observers
-- bound the observer queue, document its overflow and shutdown-flush policies, and expose queue depth/capacity, dropped-event totals, listener-failure totals, and last-drop evidence
-- return unsubscribe functions, publish immutable evidence, preserve only explicitly defined per-row lifecycle ordering, and exclude application payload bodies by default
-- support metrics, tracing, logs, and best-effort operational audit while explicitly excluding durable/compliance audit and recovery-authority guarantees
-- establish repeatable ingress, replay, prune, startup, and inspection benchmarks
-- run long-duration healthy-flow, extended-outage, reconnect-burst, and repeated-recovery soak contracts
-- define bounded expectations for memory, file descriptors, database/WAL growth, retry activity, and shutdown duration
-- test representative 8-node workloads and publish limits as measured operating envelopes, not universal throughput claims
-- retain reproducible validation summaries and environment metadata with release evidence
+- implemented the accepted [ADR 0001: Reservoir Capacity, Admission, and Overflow Semantics](docs/adr/0001-reservoir-capacity-admission-and-overflow.md)
+- added opt-in pending-row, serialized-event-size, logical pending-byte, and filesystem-reserve admission limits with stable refusal evidence
+- fixed `reject_new` as the safe overflow behavior without silently evicting previously accepted pending work
+- qualified the optional supported scheduler with one in-flight replay pump, actual replay pacing, retry-deadline awareness, periodic health refresh/pruning, cancellation, and inspectable health
+- added a typed, bounded, non-awaited, failure-isolated `monitor.lifecycle.subscribe(event, listener)` contract for ingress, storage, delivery, replay, retention, health, pressure, and duration facts without requiring a telemetry vendor
+- distinguished `deliveryAttempted`, `deliveryHandlerCompleted`, `deliveryAcknowledged`, `deliveryFailed`, and `deliveryIndeterminate`, with committed-state events emitted only after the corresponding SQLite mutation commits
+- isolated listener exceptions and rejected promises from recovery outcomes; monitor operations enqueue but never await observers
+- bounded the observer queue, documented its overflow and shutdown-flush policies, and exposed queue depth/capacity, dropped-event totals, listener-failure totals, and last-drop evidence
+- returned unsubscribe functions, published immutable evidence, preserved only explicitly defined per-row lifecycle ordering, and excluded application payload bodies by default
+- supported metrics, tracing, logs, and best-effort operational audit while explicitly excluding durable/compliance audit and recovery-authority guarantees
+- established repeatable ingress, replay, prune, startup, and inspection benchmarks
+- ran long-duration healthy-flow, extended-outage, reconnect-burst, and repeated-recovery soak contracts
+- defined bounded expectations for memory, file descriptors, database/WAL growth, retry activity, and shutdown duration
+- tested representative 8-node workloads and published limits as measured operating envelopes, not universal throughput claims
+- retained reproducible validation summaries and environment metadata with release evidence
 
 Exit criteria:
 
@@ -475,6 +477,8 @@ Exit criteria:
 - capacity contracts prove quota accounting is transactional and restart-safe, configured refusal occurs before acceptance, and pressure never silently evicts accepted pending work
 - lifecycle-event tests protect typed immutable evidence, committed-state timing, non-awaited dispatch, listener exception/rejection isolation, bounded overflow and observable drops, unsubscription, shutdown cleanup, payload exclusion, and documented ordering limits
 - capacity documentation distinguishes logical pending bytes, database/WAL observations, filesystem reserve, and deployment-owned disk provisioning
+
+Phase 6 is complete and published as `v0.5.0`. Transactional capacity, lifecycle observation, repeatable benchmark, accelerated long-horizon, ten-minute continuous-load, packed-artifact, peer-matrix, inherited recovery, and release evidence is retained in the repository and `.local/v0.5.x/0.5.0/` release records. The accelerated eight-hour profile is explicitly not an eight-hour continuous wall-clock claim.
 
 ## Phase 7: API and Semantic Freeze (Target: `v0.6.0`)
 

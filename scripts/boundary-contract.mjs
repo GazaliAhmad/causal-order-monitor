@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   MonitorBoundaryError,
   MonitorClosedError,
+  MonitorCapacityRefusedError,
   MonitorIndeterminateOutcomeError,
   MonitorRuntime,
   classifyMonitorBoundaryFailure,
@@ -22,6 +23,18 @@ for (const [error, code, retryable] of cases) {
   assert.doesNotThrow(() => JSON.stringify(failure));
 }
 assert.equal(classifyMonitorBoundaryFailure(new Error("application failure")), null);
+
+const capacityRefusal = new MonitorCapacityRefusedError({
+  limitingDimension: "pending_rows",
+  reasonCode: "MONITOR_CAPACITY_PENDING_ROWS",
+  limit: 10,
+  current: 10,
+  attempted: 11,
+});
+assert.equal(capacityRefusal.code, "ERR_MONITOR_CAPACITY_REFUSED");
+assert.equal(capacityRefusal.httpStatus, 503);
+assert.equal(capacityRefusal.recommendedAction, "retry_when_capacity_available");
+assert.deepEqual(classifyMonitorBoundaryFailure(capacityRefusal), capacityRefusal.toJSON());
 
 const runtime = new MonitorRuntime({ reservoir: { databasePath: ":memory:" } });
 runtime.close();
@@ -50,5 +63,5 @@ assert.equal(indeterminate.rowId, 42);
 assert.doesNotThrow(() => JSON.stringify(indeterminate));
 
 console.log(
-  "boundary contract passed: contention, capacity, read-only, I/O, shutdown, and indeterminate outcomes have stable JSON-safe codes",
+  "boundary contract passed: logical capacity, contention, storage capacity, read-only, I/O, shutdown, and indeterminate outcomes have stable JSON-safe codes",
 );

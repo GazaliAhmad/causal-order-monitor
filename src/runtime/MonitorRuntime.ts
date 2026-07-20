@@ -2,13 +2,17 @@ import {
   createDefaultMonitorConfig,
   type MonitorConfig,
 } from "../types/config.js";
+import type { MonitorConfigOverride } from "../config.js";
+import { LifecycleDispatcher } from "../lifecycle/LifecycleDispatcher.js";
 import { HealthTracker } from "../health/HealthTracker.js";
 import {
   inspectMonitorSnapshot,
   inspectMonitorSnapshotV1,
 } from "../inspect/inspectMonitorSnapshot.js";
 import {
+  classifyMonitorBoundaryFailure,
   MonitorAdmissionRefusedError,
+  MonitorCapacityRefusedError,
   MonitorClosedError,
 } from "../boundary.js";
 import { DeliveryRouter } from "../routing/DeliveryRouter.js";
@@ -31,13 +35,23 @@ import type {
 } from "../types/events.js";
 import type {
   InspectedMonitorSnapshot,
+  MonitorCapacityFacet,
   MonitorOperatorSnapshotV1,
   MonitorSnapshot,
   ReplaySessionSnapshot,
   ReservoirStats,
 } from "../types/snapshots.js";
+import type { MonitorLifecycleFacet } from "../types/lifecycle.js";
+import type {
+  MonitorLifecycleEvents,
+  MonitorLifecycleEventName,
+  MonitorLifecyclePublisher,
+} from "../types/lifecycle.js";
 
 type ReplayOrchestrationOwner = "manual" | "adapter";
+type MonitorLifecycleObservation = {
+  [K in MonitorLifecycleEventName]: Omit<MonitorLifecycleEvents[K], "occurredAtMs">;
+}[MonitorLifecycleEventName];
 
 export class ReplayOwnershipError extends Error {
   readonly code = "ERR_MONITOR_REPLAY_OWNERSHIP";
@@ -62,9 +76,13 @@ export class ReplayOwnershipError extends Error {
 }
 
 export class MonitorRuntime {
+  readonly capacity: MonitorCapacityFacet;
+  readonly lifecycle: MonitorLifecycleFacet;
   readonly #config: MonitorConfig;
   readonly #now: () => bigint;
   readonly #healthTracker: HealthTracker;
+  readonly #lifecycle: LifecycleDispatcher;
+  readonly #publishLifecycle: MonitorLifecyclePublisher;
   readonly #reservoir: SQLiteReservoir;
   readonly #router: DeliveryRouter;
   readonly #replay: ReplayCoordinator;
@@ -75,8 +93,9 @@ export class MonitorRuntime {
   readonly #startupHealthEvidence = new Set<MonitorComponent>();
   #replayOwner: ReplayOrchestrationOwner | null;
   #closed = false;
+  #lastCapacityPosture: "open" | "refusing" | "unknown" | null = null;
 
-  constructor(config: Partial<MonitorConfig> = {}) {
+  constructor(config: MonitorConfigOverride = {}) {
     const defaults = createDefaultMonitorConfig();
     this.#config = {
       ...defaults,
@@ -84,6 +103,10 @@ export class MonitorRuntime {
       reservoir: {
         ...defaults.reservoir,
         ...config.reservoir,
+        capacity: {
+          ...defaults.reservoir.capacity,
+          ...config.reservoir?.capacity,
+        },
       },
       transport: {
         ...defaults.transport,
@@ -131,12 +154,79 @@ export class MonitorRuntime {
         ...defaults.startup,
         ...config.startup,
       },
+      lifecycle: {
+        ...defaults.lifecycle,
+        ...config.lifecycle,
+      },
       now: config.now ?? defaults.now,
     };
 
     this.#now = this.#config.now ?? defaults.now;
+    this.#lifecycle = new LifecycleDispatcher(this.#config.lifecycle, this.#now);
+    this.lifecycle = this.#lifecycle;
+    this.#publishLifecycle = (event) => {
+      try {
+        this.#lifecycle.publish(event);
+      } catch {
+        // Lifecycle observation is best effort and cannot alter monitor outcomes.
+      }
+    };
     this.#healthTracker = new HealthTracker(this.#config.health, this.#now);
-    this.#reservoir = new SQLiteReservoir(this.#config.reservoir, this.#now);
+    this.#reservoir = new SQLiteReservoir(
+      this.#config.reservoir,
+      this.#now,
+      null,
+      {
+        onIngressRowsDelivered: (rowIds) => {
+          for (const rowId of rowIds) {
+            this.#emitLifecycle({
+              type: "deliveryAcknowledged",
+              rowId,
+              replay: false,
+            });
+          }
+        },
+        onReplayRowsDelivered: (rowIds) => {
+          this.#emitLifecycle({
+            type: "replayBatchAcknowledged",
+            rowIds,
+            count: rowIds.length,
+          });
+          for (const rowId of rowIds) {
+            this.#emitLifecycle({
+              type: "deliveryAcknowledged",
+              rowId,
+              deliveryMode: "replay_through_dedupe",
+              replay: true,
+            });
+          }
+        },
+        onRetentionDeadLettered: (count) => this.#emitLifecycle({
+          type: "retentionDeadLettered",
+          count,
+        }),
+        onRetentionDeleted: (count) => this.#emitLifecycle({
+          type: "retentionDeleted",
+          count,
+        }),
+        onCapacitySnapshot: (snapshot) => {
+          const previousPosture = this.#lastCapacityPosture;
+          this.#lastCapacityPosture = snapshot.admission.posture;
+          if (
+            previousPosture !== null &&
+            previousPosture !== snapshot.admission.posture
+          ) {
+            this.#emitLifecycle({
+              type: "capacityPressureChanged",
+              previousPosture,
+              posture: snapshot.admission.posture,
+              reasonCode: snapshot.admission.reasonCode,
+            });
+          }
+        },
+      },
+    );
+    this.capacity = this.#reservoir.capacity;
     this.#router = new DeliveryRouter(
       new ThrottleController(this.#config.throttle),
     );
@@ -144,6 +234,7 @@ export class MonitorRuntime {
       this.#config.replay,
       this.#reservoir,
       this.#now,
+      this.#publishLifecycle,
     );
     this.#throttleTier = this.#config.throttle.defaultTier;
     this.#recoveryReplayNeeded = this.#reservoir.getPendingRowCount() > 0;
@@ -174,10 +265,18 @@ export class MonitorRuntime {
   }
 
   getOperatorSnapshot(): MonitorOperatorSnapshotV1 {
-    return inspectMonitorSnapshotV1(
+    const snapshot = inspectMonitorSnapshotV1(
       this.getSnapshot(),
       this.#reservoir.getStorageSnapshot(),
     );
+    this.#emitLifecycle({
+      type: "storagePressureObserved",
+      pressure: snapshot.storage.pressure,
+      databaseBytes: snapshot.storage.databaseBytes,
+      walBytes: snapshot.storage.walBytes,
+      filesystemAvailableBytes: snapshot.storage.filesystemAvailableBytes,
+    });
+    return snapshot;
   }
 
   getHealthSnapshot() {
@@ -202,7 +301,20 @@ export class MonitorRuntime {
     mode: WalCheckpointMode = "passive",
   ): WalCheckpointResult {
     this.#assertOpen("checkpoint the reservoir WAL");
-    return this.#reservoir.checkpointWal(mode);
+    const startedAt = this.#lifecycleNow();
+    try {
+      const result = this.#reservoir.checkpointWal(mode);
+      this.#emitLifecycle({
+        type: "storageCheckpointCompleted",
+        mode: result.mode,
+        busy: result.busy,
+      });
+      this.#emitOperationDuration("checkpointReservoirWal", startedAt, "completed");
+      return result;
+    } catch (error) {
+      this.#emitOperationDuration("checkpointReservoirWal", startedAt, "failed");
+      throw error;
+    }
   }
 
   getReplaySnapshot(): ReplaySessionSnapshot {
@@ -256,6 +368,14 @@ export class MonitorRuntime {
     const snapshot = this.#healthTracker.updateComponentHealth(component, update);
     this.#recordStartupHealthEvidence(component, snapshot.state);
     this.#reservoir.recordHealthTransition(snapshot);
+    if (previous.state !== snapshot.state) {
+      this.#emitLifecycle({
+        type: "healthChanged",
+        component,
+        previousState: previous.state,
+        state: snapshot.state,
+      });
+    }
 
     if (
       component !== "transport" &&
@@ -315,13 +435,22 @@ export class MonitorRuntime {
     details: Record<string, unknown> = {},
   ) {
     this.#assertOpen("observe a component heartbeat");
+    const previous = this.#healthTracker.getComponentSnapshot(component);
     const snapshot = this.#healthTracker.observeHeartbeat(
       component,
       observedAt,
       details,
     );
     this.#recordStartupHealthEvidence(component, snapshot.state);
-    this.#reservoir.recordHealthTransition(snapshot);
+    if (previous.state !== snapshot.state) {
+      this.#reservoir.recordHealthTransition(snapshot);
+      this.#emitLifecycle({
+        type: "healthChanged",
+        component,
+        previousState: previous.state,
+        state: snapshot.state,
+      });
+    }
     this.#replay.observeRecoveryHeartbeat(
       component,
       snapshot.state,
@@ -477,17 +606,60 @@ export class MonitorRuntime {
     sourceStreamId?: string | null,
   ): { rowId: number; decision: MonitorIngressDecision } {
     this.#assertOpen("ingest a transport event");
-    const decision = this.getIngressDecision();
-    if (decision.action === "pause") {
-      throw new MonitorAdmissionRefusedError(decision);
-    }
-    const rowId = this.#reservoir.appendIngressEvent(event, {
-      sourcePath: "transport_normalized_stream",
-      sourceStreamId,
-      deliveryMode: decision.deliveryMode,
-      fullOutageActive: this.#isFullOutageActive(),
+    const startedAt = this.#lifecycleNow();
+    this.#emitLifecycleAt(startedAt, {
+      type: "ingressAttempted",
+      eventId: event.id,
+      sourceStreamId: sourceStreamId ?? null,
     });
-    return { rowId, decision };
+    try {
+      const decision = this.getIngressDecision();
+      if (decision.action === "pause") {
+        this.#emitLifecycle({
+          type: "ingressRefused",
+          reasonCode: "MONITOR_ADMISSION_REFUSED",
+        });
+        throw new MonitorAdmissionRefusedError(decision);
+      }
+      const rowId = this.#reservoir.appendIngressEvent(event, {
+        sourcePath: "transport_normalized_stream",
+        sourceStreamId,
+        deliveryMode: decision.deliveryMode,
+        fullOutageActive: this.#isFullOutageActive(),
+      });
+      this.#emitLifecycle({
+        type: "ingressAccepted",
+        rowId,
+        eventId: event.id,
+        deliveryMode: decision.deliveryMode,
+      });
+      this.#emitOperationDuration("ingestTransportEvent", startedAt, "accepted");
+      return { rowId, decision };
+    } catch (error) {
+      if (error instanceof MonitorCapacityRefusedError) {
+        this.#emitLifecycle({
+          type: "ingressRefused",
+          reasonCode: error.reasonCode,
+          limitingDimension: error.limitingDimension,
+        });
+      } else if (!(error instanceof MonitorAdmissionRefusedError)) {
+        const failure = classifyMonitorBoundaryFailure(error, "append an ingress event");
+        this.#emitLifecycle(
+          failure === null
+            ? {
+                type: "ingressRefused",
+                reasonCode: "MONITOR_INGRESS_SERIALIZATION_FAILED",
+              }
+            : {
+                type: "storageAppendFailed",
+                eventId: event.id,
+                reasonCode: failure.code,
+              },
+        );
+      }
+      this.#emitOperationDuration("ingestTransportEvent", startedAt, "failed");
+      throw error;
+    }
   }
 
   observeDedupeEvent(
@@ -495,19 +667,67 @@ export class MonitorRuntime {
     sourceStreamId?: string | null,
   ): number {
     this.#assertOpen("observe a dedupe event");
-    return this.#reservoir.appendIngressEvent(event, {
-      sourcePath: "deduped_observation",
-      sourceStreamId,
-      deliveryMode: "normal",
-      replayState: "delivered",
-      fullOutageActive: false,
+    const startedAt = this.#lifecycleNow();
+    this.#emitLifecycleAt(startedAt, {
+      type: "ingressAttempted",
+      eventId: event.id,
+      sourceStreamId: sourceStreamId ?? null,
     });
+    try {
+      const rowId = this.#reservoir.appendIngressEvent(event, {
+        sourcePath: "deduped_observation",
+        sourceStreamId,
+        deliveryMode: "normal",
+        replayState: "delivered",
+        fullOutageActive: false,
+      });
+      this.#emitLifecycle({
+        type: "ingressAccepted",
+        rowId,
+        eventId: event.id,
+        deliveryMode: "normal",
+      });
+      this.#emitOperationDuration("observeDedupeEvent", startedAt, "accepted");
+      return rowId;
+    } catch (error) {
+      if (error instanceof MonitorCapacityRefusedError) {
+        this.#emitLifecycle({
+          type: "ingressRefused",
+          reasonCode: error.reasonCode,
+          limitingDimension: error.limitingDimension,
+        });
+      } else {
+        const failure = classifyMonitorBoundaryFailure(error, "append an ingress event");
+        this.#emitLifecycle(
+          failure === null
+            ? {
+                type: "ingressRefused",
+                reasonCode: "MONITOR_INGRESS_SERIALIZATION_FAILED",
+              }
+            : {
+                type: "storageAppendFailed",
+                eventId: event.id,
+                reasonCode: failure.code,
+              },
+        );
+      }
+      this.#emitOperationDuration("observeDedupeEvent", startedAt, "failed");
+      throw error;
+    }
   }
 
   pruneReservoir(): { markedDeadLetter: number; deletedRows: number } {
     this.#assertOpen("prune the reservoir");
-    this.#reservoir.reclaimStaleReplayRows(this.#config.replay.retryBackoffMs);
-    return this.#reservoir.pruneExpired(this.#isFullOutageActive());
+    const startedAt = this.#lifecycleNow();
+    try {
+      this.#reservoir.reclaimStaleReplayRows(this.#config.replay.retryBackoffMs);
+      const result = this.#reservoir.pruneExpired(this.#isFullOutageActive());
+      this.#emitOperationDuration("pruneReservoir", startedAt, "completed");
+      return result;
+    } catch (error) {
+      this.#emitOperationDuration("pruneReservoir", startedAt, "failed");
+      throw error;
+    }
   }
 
   refreshHealthStates(at = this.#now()) {
@@ -518,6 +738,12 @@ export class MonitorRuntime {
     for (const component of ["transport", "dedupe", "causal-order"] as const) {
       if (before[component].state !== after[component].state) {
         this.#reservoir.recordHealthTransition(after[component]);
+        this.#emitLifecycle({
+          type: "healthChanged",
+          component,
+          previousState: before[component].state,
+          state: after[component].state,
+        });
       }
     }
 
@@ -543,6 +769,7 @@ export class MonitorRuntime {
       return;
     }
     try {
+      this.#lifecycle.close();
       this.#reservoir.close();
     } finally {
       this.#closed = true;
@@ -705,6 +932,38 @@ export class MonitorRuntime {
   #assertOpen(operation: string): void {
     if (this.#closed) {
       throw new MonitorClosedError(operation);
+    }
+  }
+
+  #emitLifecycle(event: MonitorLifecycleObservation): void {
+    this.#emitLifecycleAt(this.#lifecycleNow(), event);
+  }
+
+  #emitLifecycleAt(
+    occurredAt: bigint,
+    event: MonitorLifecycleObservation,
+  ): void {
+    this.#publishLifecycle({
+      ...event,
+      occurredAtMs: occurredAt.toString(),
+    } as MonitorLifecycleEvents[MonitorLifecycleEventName]);
+  }
+
+  #emitOperationDuration(operation: string, startedAt: bigint, outcome: string): void {
+    const endedAt = this.#lifecycleNow();
+    this.#emitLifecycleAt(endedAt, {
+      type: "operationDurationObserved",
+      operation,
+      durationMs: (endedAt >= startedAt ? endedAt - startedAt : 0n).toString(),
+      outcome,
+    });
+  }
+
+  #lifecycleNow(): bigint {
+    try {
+      return this.#now();
+    } catch {
+      return BigInt(Date.now());
     }
   }
 }

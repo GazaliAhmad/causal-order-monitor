@@ -2,24 +2,35 @@ import { existsSync, mkdirSync, statfsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
-import type { MonitorReservoirConfig } from "../types/config.js";
+import type {
+  MonitorFilesystemReserveConfig,
+  MonitorCapacityConfig,
+  MonitorReservoirConfig,
+} from "../types/config.js";
 import type {
   MonitorDeliveryMode,
   MonitorIngressEvent,
   MonitorSourcePath,
 } from "../types/events.js";
 import type {
+  MonitorCapacityFacet,
+  MonitorCapacityLastRefusalV1,
+  MonitorCapacityLimitingDimension,
+  MonitorCapacityReasonCode,
+  MonitorCapacitySnapshotV1,
   MonitorComponentHealthSnapshot,
   MonitorStorageSnapshotV1,
   ReplaySessionSnapshot,
   ReservoirStats,
 } from "../types/snapshots.js";
 import {
+  MonitorCapacityRefusedError,
   MonitorClosedError,
   toMonitorBoundaryError,
 } from "../boundary.js";
 import {
   applyMonitorSchema,
+  MonitorCapacityAccountingError,
   MonitorSchemaError,
   type MonitorSchemaInfo,
 } from "./schema.js";
@@ -40,6 +51,11 @@ type ReservoirReplayState =
   | "replaying"
   | "delivered"
   | "dead_letter";
+
+interface CapacityAccountingDelta {
+  rows: number;
+  bytes: bigint;
+}
 
 export interface ReservoirReplayEntry {
   rowId: number;
@@ -85,6 +101,82 @@ const BIGINT_SENTINEL = "__monitorBigInt";
 const ESCAPED_JSON_SENTINEL =
   "__causalOrderMonitorInternalEscapedJsonV1__";
 
+const DISABLED_CAPACITY_CONFIG: MonitorCapacityConfig = {
+  maxSerializedEventBytes: null,
+  maxPendingRows: null,
+  maxPendingSerializedBytes: null,
+  filesystemReserve: null,
+  overflowPolicy: "reject_new",
+};
+
+function resolveCapacityConfig(
+  config: MonitorCapacityConfig | undefined,
+): MonitorCapacityConfig {
+  const resolved = { ...DISABLED_CAPACITY_CONFIG, ...config };
+  for (const [field, value] of [
+    ["maxSerializedEventBytes", resolved.maxSerializedEventBytes],
+    ["maxPendingSerializedBytes", resolved.maxPendingSerializedBytes],
+  ] as const) {
+    if (value !== null && (typeof value !== "bigint" || value < 0n)) {
+      throw new TypeError(`reservoir.capacity.${field} must be null or a non-negative bigint.`);
+    }
+  }
+  if (
+    resolved.maxPendingRows !== null &&
+    (!Number.isSafeInteger(resolved.maxPendingRows) || resolved.maxPendingRows < 0)
+  ) {
+    throw new TypeError(
+      "reservoir.capacity.maxPendingRows must be null or a non-negative safe integer.",
+    );
+  }
+  if (resolved.filesystemReserve !== null) {
+    validateFilesystemReserveConfig(resolved.filesystemReserve);
+  }
+  if (resolved.overflowPolicy !== "reject_new") {
+    throw new TypeError("reservoir.capacity.overflowPolicy must be 'reject_new'.");
+  }
+  return resolved;
+}
+
+export type MonitorStorageEvidenceReader = () => MonitorStorageSnapshotV1;
+
+export interface MonitorReservoirLifecycleHooks {
+  onIngressRowsDelivered?(rowIds: ReadonlyArray<number>): void;
+  onReplayRowsDelivered?(rowIds: ReadonlyArray<number>): void;
+  onRetentionDeadLettered?(count: number): void;
+  onRetentionDeleted?(count: number): void;
+  onCapacitySnapshot?(snapshot: MonitorCapacitySnapshotV1): void;
+}
+
+function validateFilesystemReserveConfig(
+  config: MonitorFilesystemReserveConfig,
+): void {
+  if (
+    typeof config.minimumAvailableBytes !== "bigint" ||
+    config.minimumAvailableBytes < 0n
+  ) {
+    throw new TypeError(
+      "reservoir.capacity.filesystemReserve.minimumAvailableBytes must be a non-negative bigint.",
+    );
+  }
+  if (
+    typeof config.resumeAvailableBytes !== "bigint" ||
+    config.resumeAvailableBytes <= config.minimumAvailableBytes
+  ) {
+    throw new TypeError(
+      "reservoir.capacity.filesystemReserve.resumeAvailableBytes must be a bigint greater than minimumAvailableBytes.",
+    );
+  }
+  if (
+    config.unavailableEvidence !== "allow_logical_admission" &&
+    config.unavailableEvidence !== "refuse_admission"
+  ) {
+    throw new TypeError(
+      "reservoir.capacity.filesystemReserve.unavailableEvidence must be 'allow_logical_admission' or 'refuse_admission'.",
+    );
+  }
+}
+
 const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
   id,
   monitor_ingest_at_ms,
@@ -96,6 +188,7 @@ const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
   sequence,
   logical_time_ms,
   payload_json,
+  serialized_event_bytes,
   payload_encoding,
   delivery_mode,
   replay_state,
@@ -115,6 +208,7 @@ const INSERT_INGRESS_EVENT_SQL = `INSERT INTO ingress_events (
   @sequence,
   @logical_time_ms,
   @payload_json,
+  @serialized_event_bytes,
   @payload_encoding,
   @delivery_mode,
   @replay_state,
@@ -173,6 +267,36 @@ function parseBigInt(value: unknown): bigint {
     return BigInt(value);
   }
   return 0n;
+}
+
+function parseOptionalUnsignedDecimal(value: string | null): bigint | null {
+  if (value === null || !/^\d+$/.test(value)) return null;
+  return BigInt(value);
+}
+
+function unknownStorageSnapshot(): MonitorStorageSnapshotV1 {
+  return {
+    pressure: "unknown",
+    databaseBytes: null,
+    walBytes: null,
+    filesystemAvailableBytes: null,
+    filesystemTotalBytes: null,
+    filesystemUsedPercent: null,
+  };
+}
+
+function incrementSafeCounter(value: number): number {
+  return value >= Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : value + 1;
+}
+
+function utilizationPercent(usage: bigint, limit: bigint | null): number | null {
+  if (limit === null) return null;
+  if (limit === 0n) return 100;
+  return Math.round((Number(usage) / Number(limit)) * 10_000) / 100;
+}
+
+function isPendingReplayState(state: ReservoirReplayState): boolean {
+  return state === "pending" || state === "replaying";
 }
 
 function serializeJson(value: unknown): string {
@@ -236,17 +360,38 @@ function deserializeJson<T>(value: string): T {
 }
 
 export class SQLiteReservoir {
-  readonly #config: MonitorReservoirConfig;
+  readonly capacity: MonitorCapacityFacet;
+  readonly #config: MonitorReservoirConfig & { capacity: MonitorCapacityConfig };
   readonly #now: () => bigint;
   readonly #db: DatabaseSync;
   readonly #schemaInfo: MonitorSchemaInfo;
   readonly #appendIngressStatement: StatementSync;
+  readonly #storageEvidenceReader: MonitorStorageEvidenceReader | null;
+  readonly #lifecycleHooks: MonitorReservoirLifecycleHooks;
   #pendingRowCount: number;
+  #filesystemReserveLatched = false;
+  #lastKnownFilesystemAvailableBytes: bigint | null = null;
+  #lastCapacityRefusal: MonitorCapacityLastRefusalV1 | null = null;
+  #capacityRefusedTotal = 0;
+  #storageAppendFailureTotal = 0;
   #closed = false;
 
-  constructor(config: MonitorReservoirConfig, now: () => bigint) {
-    this.#config = config;
+  constructor(
+    config: MonitorReservoirConfig,
+    now: () => bigint,
+    storageEvidenceReader: MonitorStorageEvidenceReader | null = null,
+    lifecycleHooks: MonitorReservoirLifecycleHooks = {},
+  ) {
+    this.#config = {
+      ...config,
+      capacity: resolveCapacityConfig(config.capacity),
+    };
     this.#now = now;
+    this.#storageEvidenceReader = storageEvidenceReader;
+    this.#lifecycleHooks = lifecycleHooks;
+    this.capacity = Object.freeze({
+      getSnapshot: () => this.#getCapacitySnapshot(),
+    });
     let db: DatabaseSync | undefined;
     try {
       if (config.databasePath !== ":memory:") {
@@ -268,7 +413,10 @@ export class SQLiteReservoir {
       } catch {
         // Preserve the startup failure that prevented reservoir initialization.
       }
-      if (error instanceof MonitorSchemaError) {
+      if (
+        error instanceof MonitorSchemaError ||
+        error instanceof MonitorCapacityAccountingError
+      ) {
         throw error;
       }
       throw toReservoirStartupError(config.databasePath, error);
@@ -292,41 +440,66 @@ export class SQLiteReservoir {
     const replayState =
       options.replayState ??
       (options.sourcePath === "deduped_observation" ? "delivered" : "pending");
+    const payloadJson = serializeJson(event);
+    const serializedEventBytes = BigInt(Buffer.byteLength(payloadJson, "utf8"));
+    const maximumEventBytes = this.#config.capacity.maxSerializedEventBytes;
+    if (
+      maximumEventBytes !== null &&
+      serializedEventBytes > maximumEventBytes
+    ) {
+      this.#refuseCapacity({
+        limitingDimension: "serialized_event_bytes",
+        reasonCode: "MONITOR_CAPACITY_SERIALIZED_EVENT_BYTES",
+        limit: maximumEventBytes,
+        current: 0n,
+        attempted: serializedEventBytes,
+      });
+    }
+    this.#assertFilesystemReserveAdmission();
 
     let result: ReturnType<StatementSync["run"]>;
     try {
-      result = this.#appendIngressStatement.run({
-      id: event.id,
-      monitor_ingest_at_ms: toSqlBigInt(monitorIngestAt),
-      source_node_id: event.nodeId,
-      source_stream_id: options.sourceStreamId ?? null,
-      source_path: options.sourcePath,
-      event_id: event.id,
-      trace_id: event.traceId ?? event.payload.traceId ?? null,
-      sequence: event.sequence?.toString() ?? null,
-      logical_time_ms: toSqlBigInt(event.clock.physicalTimeMs),
-      payload_json: serializeJson(event),
-      payload_encoding: "json",
-      delivery_mode: options.deliveryMode,
-      replay_state: replayState,
-      replay_attempts: 0,
-      retry_not_before_ms:
-        options.retryNotBeforeMs === null || options.retryNotBeforeMs === undefined
-          ? null
-          : toSqlBigInt(options.retryNotBeforeMs),
-      replay_claimed_at_ms: null,
-      terminal_at_ms:
-        replayState === "delivered" || replayState === "dead_letter"
-          ? toSqlBigInt(monitorIngestAt)
-          : null,
-      expires_at_ms: toSqlBigInt(expiresAt),
+      result = this.#withTransaction(() => {
+        this.#assertPendingCapacityAdmission(replayState, serializedEventBytes);
+        const appendResult = this.#appendIngressStatement.run({
+          id: event.id,
+          monitor_ingest_at_ms: toSqlBigInt(monitorIngestAt),
+          source_node_id: event.nodeId,
+          source_stream_id: options.sourceStreamId ?? null,
+          source_path: options.sourcePath,
+          event_id: event.id,
+          trace_id: event.traceId ?? event.payload.traceId ?? null,
+          sequence: event.sequence?.toString() ?? null,
+          logical_time_ms: toSqlBigInt(event.clock.physicalTimeMs),
+          payload_json: payloadJson,
+          serialized_event_bytes: toSqlBigInt(serializedEventBytes),
+          payload_encoding: "json",
+          delivery_mode: options.deliveryMode,
+          replay_state: replayState,
+          replay_attempts: 0,
+          retry_not_before_ms:
+            options.retryNotBeforeMs === null || options.retryNotBeforeMs === undefined
+              ? null
+              : toSqlBigInt(options.retryNotBeforeMs),
+          replay_claimed_at_ms: null,
+          terminal_at_ms:
+            replayState === "delivered" || replayState === "dead_letter"
+              ? toSqlBigInt(monitorIngestAt)
+              : null,
+          expires_at_ms: toSqlBigInt(expiresAt),
+        });
+        if (isPendingReplayState(replayState)) {
+          this.#adjustCapacityAccounting(1, serializedEventBytes);
+        }
+        return appendResult;
       });
     } catch (error) {
+      if (!(error instanceof MonitorCapacityRefusedError)) {
+        this.#storageAppendFailureTotal = incrementSafeCounter(
+          this.#storageAppendFailureTotal,
+        );
+      }
       throw toMonitorBoundaryError(error, "append an ingress event");
-    }
-
-    if (replayState === "pending" || replayState === "replaying") {
-      this.#pendingRowCount += 1;
     }
 
     return Number(result.lastInsertRowid);
@@ -419,17 +592,19 @@ export class SQLiteReservoir {
     fromStates: ReadonlyArray<ReservoirReplayState>,
     nextState: ReservoirReplayState,
   ): number {
+    this.#assertOpen("update replay state");
+    if (fromStates.length === 0) return 0;
     const placeholders = fromStates.map(() => "?").join(", ");
-    const result = this.#prepare(
-      `UPDATE ingress_events
-         SET replay_state = ?
-         WHERE replay_state IN (${placeholders})`,
-    ).run(nextState, ...fromStates);
-    const changedRows = Number(result.changes);
-    if (changedRows > 0) {
-      this.#pendingRowCount = this.#readPendingRowCount();
-    }
-    return changedRows;
+    return this.#withTransaction(() => {
+      const delta = this.#readCapacityDeltaForStates(fromStates, nextState);
+      const result = this.#prepare(
+        `UPDATE ingress_events
+           SET replay_state = ?
+           WHERE replay_state IN (${placeholders})`,
+      ).run(nextState, ...fromStates);
+      this.#adjustCapacityAccounting(delta.rows, delta.bytes);
+      return Number(result.changes);
+    });
   }
 
   claimReplayBatch(
@@ -490,11 +665,21 @@ export class SQLiteReservoir {
   }
 
   markReplayBatchDelivered(rowIds: ReadonlyArray<number>): number {
-    return this.#updateReplayRows(rowIds, "delivered", null);
+    return this.#updateReplayRows(
+      rowIds,
+      "delivered",
+      null,
+      (transitionedRowIds) => this.#lifecycleHooks.onReplayRowsDelivered?.(transitionedRowIds),
+    );
   }
 
   markIngressRowsDelivered(rowIds: ReadonlyArray<number>): number {
-    return this.#updateReplayRows(rowIds, "delivered", null);
+    return this.#updateReplayRows(
+      rowIds,
+      "delivered",
+      null,
+      (transitionedRowIds) => this.#lifecycleHooks.onIngressRowsDelivered?.(transitionedRowIds),
+    );
   }
 
   resetReplayBatchToPending(
@@ -520,7 +705,7 @@ export class SQLiteReservoir {
     while (true) {
       const reclaimedThisPass = this.#withTransaction(() => {
         const rowIds = this.#selectStaleReplayingRowIds(staleClaimCutoff);
-        return this.#updateReplayRows(rowIds, "pending", null);
+        return this.#updateReplayRowsInTransaction(rowIds, "pending", null);
       });
 
       if (reclaimedThisPass === 0) {
@@ -541,10 +726,6 @@ export class SQLiteReservoir {
       ).run();
       return Number(result.changes);
     });
-
-    if (reclaimedInterruptedRows > 0) {
-      this.#pendingRowCount = this.#readPendingRowCount();
-    }
 
     const stats = this.getStats();
     const attemptRow = this.#prepareReadBigInts(
@@ -574,7 +755,13 @@ export class SQLiteReservoir {
       hardCutoff,
       rollingCutoff,
     );
+    if (markedDeadLetter > 0) {
+      this.#lifecycleHooks.onRetentionDeadLettered?.(markedDeadLetter);
+    }
     const deletedRows = this.#deleteExpiredTerminalRows(now);
+    if (deletedRows > 0) {
+      this.#lifecycleHooks.onRetentionDeleted?.(deletedRows);
+    }
     return {
       markedDeadLetter,
       deletedRows,
@@ -681,9 +868,9 @@ export class SQLiteReservoir {
 
   #readPendingRowCount(): number {
     const row = this.#prepareReadBigInts(
-      `SELECT COUNT(*) AS count
-         FROM ingress_events
-         WHERE replay_state IN ('pending', 'replaying')`,
+      `SELECT pending_rows AS count
+         FROM reservoir_capacity_state
+        WHERE singleton_id = 1`,
     ).get() as { count?: unknown };
     return parseCount(row.count);
   }
@@ -694,15 +881,15 @@ export class SQLiteReservoir {
 
   getStorageSnapshot(): MonitorStorageSnapshotV1 {
     this.#assertOpen("read reservoir storage statistics");
+    if (this.#storageEvidenceReader) {
+      try {
+        return { ...this.#storageEvidenceReader() };
+      } catch {
+        return unknownStorageSnapshot();
+      }
+    }
     if (this.#config.databasePath === ":memory:") {
-      return {
-        pressure: "unknown",
-        databaseBytes: null,
-        walBytes: null,
-        filesystemAvailableBytes: null,
-        filesystemTotalBytes: null,
-        filesystemUsedPercent: null,
-      };
+      return unknownStorageSnapshot();
     }
 
     try {
@@ -730,14 +917,7 @@ export class SQLiteReservoir {
         filesystemUsedPercent: usedPercent,
       };
     } catch {
-      return {
-        pressure: "unknown",
-        databaseBytes: null,
-        walBytes: null,
-        filesystemAvailableBytes: null,
-        filesystemTotalBytes: null,
-        filesystemUsedPercent: null,
-      };
+      return unknownStorageSnapshot();
     }
   }
 
@@ -764,13 +944,46 @@ export class SQLiteReservoir {
     rowIds: ReadonlyArray<number>,
     nextState: ReservoirReplayState,
     retryNotBeforeMs?: bigint | null,
+    onCommitted?: (transitionedRowIds: ReadonlyArray<number>) => void,
   ): number {
     this.#assertOpen("update replay rows");
     if (rowIds.length === 0) {
       return 0;
     }
 
-    const placeholders = rowIds.map(() => "?").join(", ");
+    const uniqueRowIds = [...new Set(rowIds)];
+    const result = this.#withTransaction(() => {
+      const placeholders = uniqueRowIds.map(() => "?").join(", ");
+      const rows = this.#prepareReadBigInts(
+        `SELECT rowid AS row_id, replay_state
+           FROM ingress_events
+          WHERE rowid IN (${placeholders})`,
+      ).all(...uniqueRowIds) as Array<{ row_id: bigint; replay_state: ReservoirReplayState }>;
+      const transitionedRowIds = rows
+        .filter((row) => row.replay_state !== nextState)
+        .map((row) => Number(row.row_id));
+      return {
+        changes: this.#updateReplayRowsInTransaction(
+          uniqueRowIds,
+          nextState,
+          retryNotBeforeMs,
+        ),
+        transitionedRowIds,
+      };
+    });
+    if (result.transitionedRowIds.length > 0) onCommitted?.(result.transitionedRowIds);
+    return result.changes;
+  }
+
+  #updateReplayRowsInTransaction(
+    rowIds: ReadonlyArray<number>,
+    nextState: ReservoirReplayState,
+    retryNotBeforeMs?: bigint | null,
+  ): number {
+    if (rowIds.length === 0) return 0;
+    const uniqueRowIds = [...new Set(rowIds)];
+    const delta = this.#readCapacityDeltaForRowIds(uniqueRowIds, nextState);
+    const placeholders = uniqueRowIds.map(() => "?").join(", ");
     const result = this.#prepare(
       `UPDATE ingress_events
          SET replay_state = ?,
@@ -786,13 +999,10 @@ export class SQLiteReservoir {
       nextState === "delivered" || nextState === "dead_letter"
         ? toSqlBigInt(this.#now())
         : null,
-      ...rowIds,
+      ...uniqueRowIds,
     );
-    const changedRows = Number(result.changes);
-    if (changedRows > 0) {
-      this.#pendingRowCount = this.#readPendingRowCount();
-    }
-    return changedRows;
+    this.#adjustCapacityAccounting(delta.rows, delta.bytes);
+    return Number(result.changes);
   }
 
   #markExpiredPendingRows(
@@ -806,7 +1016,7 @@ export class SQLiteReservoir {
         rollingCutoff,
         pendingBatchSize,
       );
-      return this.#updateReplayRows(rowIds, "dead_letter", null);
+      return this.#updateReplayRowsInTransaction(rowIds, "dead_letter", null);
     });
   }
 
@@ -902,6 +1112,299 @@ export class SQLiteReservoir {
     return Number(result.changes);
   }
 
+  #readCapacityDeltaForStates(
+    fromStates: ReadonlyArray<ReservoirReplayState>,
+    nextState: ReservoirReplayState,
+  ): CapacityAccountingDelta {
+    const placeholders = fromStates.map(() => "?").join(", ");
+    const rows = this.#prepareReadBigInts(
+      `SELECT replay_state, serialized_event_bytes
+         FROM ingress_events
+        WHERE replay_state IN (${placeholders})`,
+    ).all(...fromStates) as Array<{
+      replay_state: ReservoirReplayState;
+      serialized_event_bytes: unknown;
+    }>;
+    return this.#calculateCapacityDelta(rows, nextState);
+  }
+
+  #readCapacityDeltaForRowIds(
+    rowIds: ReadonlyArray<number>,
+    nextState: ReservoirReplayState,
+  ): CapacityAccountingDelta {
+    const placeholders = rowIds.map(() => "?").join(", ");
+    const rows = this.#prepareReadBigInts(
+      `SELECT replay_state, serialized_event_bytes
+         FROM ingress_events
+        WHERE rowid IN (${placeholders})`,
+    ).all(...rowIds) as Array<{
+      replay_state: ReservoirReplayState;
+      serialized_event_bytes: unknown;
+    }>;
+    return this.#calculateCapacityDelta(rows, nextState);
+  }
+
+  #calculateCapacityDelta(
+    rows: ReadonlyArray<{
+      replay_state: ReservoirReplayState;
+      serialized_event_bytes: unknown;
+    }>,
+    nextState: ReservoirReplayState,
+  ): CapacityAccountingDelta {
+    const nextPending = isPendingReplayState(nextState);
+    let rowDelta = 0;
+    let byteDelta = 0n;
+    for (const row of rows) {
+      const currentPending = isPendingReplayState(row.replay_state);
+      if (currentPending === nextPending) continue;
+      const direction = nextPending ? 1 : -1;
+      rowDelta += direction;
+      byteDelta += BigInt(direction) * parseBigInt(row.serialized_event_bytes);
+    }
+    return { rows: rowDelta, bytes: byteDelta };
+  }
+
+  #adjustCapacityAccounting(rowDelta: number, byteDelta: bigint): void {
+    if (rowDelta === 0 && byteDelta === 0n) return;
+    const result = this.#prepare(
+      `UPDATE reservoir_capacity_state
+          SET pending_rows = pending_rows + ?,
+              pending_serialized_bytes = pending_serialized_bytes + ?
+        WHERE singleton_id = 1`,
+    ).run(rowDelta, toSqlBigInt(byteDelta));
+    if (Number(result.changes) !== 1) {
+      throw new MonitorCapacityAccountingError(
+        this.#config.databasePath,
+        "The singleton accounting row disappeared during a capacity-changing transaction.",
+      );
+    }
+    this.#pendingRowCount += rowDelta;
+  }
+
+  #assertPendingCapacityAdmission(
+    replayState: ReservoirReplayState,
+    serializedEventBytes: bigint,
+  ): void {
+    if (!isPendingReplayState(replayState)) return;
+    const { maxPendingRows, maxPendingSerializedBytes } = this.#config.capacity;
+    if (maxPendingRows === null && maxPendingSerializedBytes === null) return;
+    const statement = this.#prepareReadBigInts(
+      `SELECT pending_rows, pending_serialized_bytes
+         FROM reservoir_capacity_state
+        WHERE singleton_id = 1`,
+    );
+    const state = statement.get() as {
+      pending_rows?: unknown;
+      pending_serialized_bytes?: unknown;
+    };
+    const pendingRows = parseBigInt(state.pending_rows);
+    const pendingBytes = parseBigInt(state.pending_serialized_bytes);
+    const attemptedRows = pendingRows + 1n;
+    if (maxPendingRows !== null && attemptedRows > BigInt(maxPendingRows)) {
+      this.#refuseCapacity({
+        limitingDimension: "pending_rows",
+        reasonCode: "MONITOR_CAPACITY_PENDING_ROWS",
+        limit: maxPendingRows,
+        current: pendingRows,
+        attempted: attemptedRows,
+      });
+    }
+    const attemptedBytes = pendingBytes + serializedEventBytes;
+    if (
+      maxPendingSerializedBytes !== null &&
+      attemptedBytes > maxPendingSerializedBytes
+    ) {
+      this.#refuseCapacity({
+        limitingDimension: "pending_serialized_bytes",
+        reasonCode: "MONITOR_CAPACITY_PENDING_SERIALIZED_BYTES",
+        limit: maxPendingSerializedBytes,
+        current: pendingBytes,
+        attempted: attemptedBytes,
+      });
+    }
+  }
+
+  #assertFilesystemReserveAdmission(): void {
+    const reserve = this.#config.capacity.filesystemReserve;
+    if (reserve === null) return;
+    const storage = this.getStorageSnapshot();
+    const available = parseOptionalUnsignedDecimal(
+      storage.filesystemAvailableBytes,
+    );
+    if (available === null) {
+      if (this.#filesystemReserveLatched) {
+        const lastKnown = this.#lastKnownFilesystemAvailableBytes;
+        this.#refuseCapacity({
+          limitingDimension: "filesystem_reserve",
+          reasonCode: "MONITOR_CAPACITY_FILESYSTEM_RESERVE",
+          limit: reserve.resumeAvailableBytes,
+          current: lastKnown ?? "unknown",
+          attempted: lastKnown ?? "unknown",
+        });
+      }
+      if (reserve.unavailableEvidence === "refuse_admission") {
+        this.#refuseCapacity({
+          limitingDimension: "filesystem_evidence_unavailable",
+          reasonCode: "MONITOR_CAPACITY_FILESYSTEM_EVIDENCE_UNAVAILABLE",
+          limit: reserve.minimumAvailableBytes,
+          current: "unknown",
+          attempted: "unknown",
+        });
+      }
+      return;
+    }
+
+    this.#lastKnownFilesystemAvailableBytes = available;
+    if (available <= reserve.minimumAvailableBytes) {
+      this.#filesystemReserveLatched = true;
+    } else if (available >= reserve.resumeAvailableBytes) {
+      this.#filesystemReserveLatched = false;
+    }
+    if (this.#filesystemReserveLatched) {
+      this.#refuseCapacity({
+        limitingDimension: "filesystem_reserve",
+        reasonCode: "MONITOR_CAPACITY_FILESYSTEM_RESERVE",
+        limit: available <= reserve.minimumAvailableBytes
+          ? reserve.minimumAvailableBytes
+          : reserve.resumeAvailableBytes,
+        current: available,
+        attempted: available,
+      });
+    }
+  }
+
+  #refuseCapacity(options: {
+    limitingDimension: MonitorCapacityLimitingDimension;
+    reasonCode: MonitorCapacityReasonCode;
+    limit: bigint | number | string;
+    current: bigint | number | string;
+    attempted: bigint | number | string;
+  }): never {
+    const error = new MonitorCapacityRefusedError(options);
+    this.#capacityRefusedTotal = incrementSafeCounter(this.#capacityRefusedTotal);
+    this.#lastCapacityRefusal = {
+      occurredAtMs: this.#now().toString(),
+      limitingDimension: error.limitingDimension,
+      reasonCode: error.reasonCode,
+      limit: error.limit,
+      current: error.current,
+      attempted: error.attempted,
+      retryable: error.retryable,
+      recommendedAction: error.recommendedAction as MonitorCapacityLastRefusalV1["recommendedAction"],
+    };
+    throw error;
+  }
+
+  #getCapacitySnapshot(): MonitorCapacitySnapshotV1 {
+    this.#assertOpen("read the capacity snapshot");
+    const state = this.#prepareReadBigInts(
+      `SELECT pending_rows, pending_serialized_bytes
+         FROM reservoir_capacity_state
+        WHERE singleton_id = 1`,
+    ).get() as {
+      pending_rows?: unknown;
+      pending_serialized_bytes?: unknown;
+    };
+    const pendingRows = parseBigInt(state.pending_rows);
+    const pendingBytes = parseBigInt(state.pending_serialized_bytes);
+    const storage = this.getStorageSnapshot();
+    const available = parseOptionalUnsignedDecimal(
+      storage.filesystemAvailableBytes,
+    );
+    const reserve = this.#config.capacity.filesystemReserve;
+    let posture: MonitorCapacitySnapshotV1["admission"]["posture"] = "open";
+    let reasonCode: MonitorCapacityReasonCode | null = null;
+    let limitingDimension: MonitorCapacityLimitingDimension | null = null;
+
+    if (reserve !== null) {
+      if (available === null) {
+        if (this.#filesystemReserveLatched) {
+          posture = "refusing";
+          reasonCode = "MONITOR_CAPACITY_FILESYSTEM_RESERVE";
+          limitingDimension = "filesystem_reserve";
+        } else {
+          posture = reserve.unavailableEvidence === "refuse_admission"
+            ? "refusing"
+            : "unknown";
+          reasonCode = "MONITOR_CAPACITY_FILESYSTEM_EVIDENCE_UNAVAILABLE";
+          limitingDimension = "filesystem_evidence_unavailable";
+        }
+      } else if (
+        available <= reserve.minimumAvailableBytes ||
+        (this.#filesystemReserveLatched && available < reserve.resumeAvailableBytes)
+      ) {
+        posture = "refusing";
+        reasonCode = "MONITOR_CAPACITY_FILESYSTEM_RESERVE";
+        limitingDimension = "filesystem_reserve";
+      }
+    }
+
+    if (posture !== "refusing") {
+      const maxRows = this.#config.capacity.maxPendingRows;
+      const maxBytes = this.#config.capacity.maxPendingSerializedBytes;
+      if (maxRows !== null && pendingRows >= BigInt(maxRows)) {
+        posture = "refusing";
+        reasonCode = "MONITOR_CAPACITY_PENDING_ROWS";
+        limitingDimension = "pending_rows";
+      } else if (maxBytes !== null && pendingBytes >= maxBytes) {
+        posture = "refusing";
+        reasonCode = "MONITOR_CAPACITY_PENDING_SERIALIZED_BYTES";
+        limitingDimension = "pending_serialized_bytes";
+      }
+    }
+
+    const snapshot: MonitorCapacitySnapshotV1 = {
+      schema: "causal-order-monitor/capacity-snapshot",
+      version: 1,
+      generatedAtMs: this.#now().toString(),
+      overflowPolicy: "reject_new",
+      admission: { posture, reasonCode, limitingDimension },
+      limits: {
+        maxSerializedEventBytes:
+          this.#config.capacity.maxSerializedEventBytes?.toString() ?? null,
+        maxPendingRows: this.#config.capacity.maxPendingRows,
+        maxPendingSerializedBytes:
+          this.#config.capacity.maxPendingSerializedBytes?.toString() ?? null,
+        filesystemReserve: reserve === null
+          ? null
+          : {
+              minimumAvailableBytes: reserve.minimumAvailableBytes.toString(),
+              resumeAvailableBytes: reserve.resumeAvailableBytes.toString(),
+              unavailableEvidence: reserve.unavailableEvidence,
+            },
+      },
+      usage: {
+        pendingRows: Number(pendingRows),
+        pendingSerializedBytes: pendingBytes.toString(),
+        databaseBytes: storage.databaseBytes,
+        walBytes: storage.walBytes,
+        filesystemAvailableBytes: storage.filesystemAvailableBytes,
+        filesystemTotalBytes: storage.filesystemTotalBytes,
+      },
+      utilization: {
+        pendingRowsPercent: utilizationPercent(
+          pendingRows,
+          this.#config.capacity.maxPendingRows === null
+            ? null
+            : BigInt(this.#config.capacity.maxPendingRows),
+        ),
+        pendingSerializedBytesPercent: utilizationPercent(
+          pendingBytes,
+          this.#config.capacity.maxPendingSerializedBytes,
+        ),
+      },
+      lastRefusal: this.#lastCapacityRefusal === null
+        ? null
+        : { ...this.#lastCapacityRefusal },
+      counters: {
+        refusedTotal: this.#capacityRefusedTotal,
+        storageAppendFailureTotal: this.#storageAppendFailureTotal,
+      },
+    };
+    this.#lifecycleHooks.onCapacitySnapshot?.(snapshot);
+    return snapshot;
+  }
+
   #prepare(sql: string): StatementSync {
     this.#assertOpen("access reservoir storage");
     return this.#db.prepare(sql);
@@ -916,7 +1419,7 @@ export class SQLiteReservoir {
 
   #withTransaction<T>(work: () => T): T {
     this.#assertOpen("run a reservoir transaction");
-    this.#db.exec("BEGIN");
+    this.#db.exec("BEGIN IMMEDIATE");
     try {
       const result = work();
       this.#db.exec("COMMIT");

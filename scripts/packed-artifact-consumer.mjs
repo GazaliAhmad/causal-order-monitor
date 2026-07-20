@@ -166,6 +166,7 @@ function createTarball(workspace, suppliedTarball, suppliedPackDestination) {
     [
       "pack",
       "--json",
+      "--dry-run=false",
       "--pack-destination",
       artifactDirectory,
       "--cache",
@@ -225,7 +226,12 @@ function createConsumerFiles(consumerDirectory, packageJson, versions, tarballPa
     join(consumerDirectory, "verify-types.ts"),
     `import {
   createDefaultMonitorConfig,
+  MONITOR_LIFECYCLE_EVENT_NAMES,
+  MonitorCapacityRefusedError,
   monitorPackageVersion,
+  type MonitorCapacitySnapshotV1,
+  type MonitorLifecycleEvent,
+  type MonitorLifecycleSnapshotV1,
   type MonitorOperatorSnapshotV1,
 } from "@causal-order/monitor";
 import {
@@ -295,6 +301,9 @@ const event: MonitorIngressEvent = {
 };
 
 type ContractTypes =
+  | MonitorCapacitySnapshotV1
+  | MonitorLifecycleEvent
+  | MonitorLifecycleSnapshotV1
   | MonitorOperatorSnapshotV1
   | ReplayBatch
   | MonitorBoundaryFailure
@@ -312,6 +321,8 @@ void defaults;
 void scenario;
 void event;
 void (null as ContractTypes | null);
+void MONITOR_LIFECYCLE_EVENT_NAMES;
+void MonitorCapacityRefusedError;
 void monitorPackageVersion;
 void HealthTracker;
 void inspectMonitorSnapshotV1;
@@ -383,6 +394,8 @@ for (const specifier of contract.functionalSpecifiers) {
 }
 
 assert.equal(namespaces.get("@causal-order/monitor").monitorPackageVersion, contract.expectedVersion);
+assert.equal(namespaces.get("@causal-order/monitor").MONITOR_LIFECYCLE_EVENT_NAMES.length, 20);
+assert.equal(typeof namespaces.get("@causal-order/monitor").MonitorCapacityRefusedError, "function");
 assert.equal(typeof namespaces.get("@causal-order/monitor/config").createDefaultMonitorConfig, "function");
 assert.equal(typeof namespaces.get("@causal-order/monitor/health").HealthTracker, "function");
 assert.equal(typeof namespaces.get("@causal-order/monitor/inspect").inspectMonitorSnapshotV1, "function");
@@ -473,6 +486,7 @@ try {
   runNpm(
     [
       "install",
+      "--dry-run=false",
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",

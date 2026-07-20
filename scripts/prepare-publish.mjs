@@ -19,11 +19,16 @@ const replacements = [
   },
   {
     path: new URL("../README.md", import.meta.url),
-    description: "README repository development version",
+    description: "README published package version",
     update(source) {
+      if (!/Published package version: `v[^`]+`/.test(source)) {
+        throw new Error(
+          "README.md is missing the published package version marker.",
+        );
+      }
       return source.replace(
-        /Current repository development version: `v[^`]+`/,
-        `Current repository development version: \`v${version}\``,
+        /Published package version: `v[^`]+`/,
+        `Published package version: \`v${version}\``,
       );
     },
   },

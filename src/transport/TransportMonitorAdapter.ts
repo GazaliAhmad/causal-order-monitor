@@ -1,5 +1,5 @@
 import { MonitorRuntime } from "../runtime/MonitorRuntime.js";
-import type { MonitorConfig } from "../types/config.js";
+import { LifecycleDispatcher } from "../lifecycle/LifecycleDispatcher.js";
 import {
   loadMonitorConfigFile,
   resolveMonitorConfigFromEnvironment,
@@ -14,10 +14,16 @@ import type {
 } from "../types/events.js";
 import type {
   InspectedMonitorSnapshot,
+  MonitorCapacityFacet,
   MonitorOperatorSnapshotV1,
   MonitorSnapshot,
   ReplaySessionSnapshot,
 } from "../types/snapshots.js";
+import type {
+  MonitorLifecycleEventName,
+  MonitorLifecycleEvents,
+  MonitorLifecycleFacet,
+} from "../types/lifecycle.js";
 import {
   deriveMonitorAdmissionDecision,
   type MonitorAdmissionDecision,
@@ -69,16 +75,24 @@ export interface ReplayPumpResult {
   completed: boolean;
 }
 
+type MonitorLifecycleObservation = {
+  [K in MonitorLifecycleEventName]: Omit<MonitorLifecycleEvents[K], "occurredAtMs">;
+}[MonitorLifecycleEventName];
+
 export class TransportMonitorAdapter {
+  readonly capacity: MonitorCapacityFacet;
+  readonly lifecycle: MonitorLifecycleFacet;
   readonly #runtime: MonitorRuntime;
   readonly #handlers: MonitorAdapterHandlers;
   #activeReplayOperation: Promise<ReplayPumpResult | null> | null = null;
 
   constructor(
     handlers: MonitorAdapterHandlers,
-    config: Partial<MonitorConfig> = {},
+    config: MonitorConfigOverride = {},
   ) {
     this.#runtime = new MonitorRuntime(config);
+    this.capacity = this.#runtime.capacity;
+    this.lifecycle = this.#runtime.lifecycle;
     this.#runtime.bindReplayOrchestrationOwner("adapter");
     this.#handlers = handlers;
   }
@@ -130,16 +144,21 @@ export class TransportMonitorAdapter {
     event: MonitorIngressEvent,
     sourceStreamId?: string | null,
   ): Promise<MonitorIngestResult> {
+    const operationStartedAt = this.#now();
     const { rowId, decision } = this.#runtime.ingestTransportEvent(
       event,
       sourceStreamId,
     );
     const admission = deriveMonitorAdmissionDecision(decision);
+    let deliveryAttempted = false;
+    let deliveryHandlerCompleted = false;
+    let deliveryStartedAt = operationStartedAt;
     try {
       await this.#handlers.onDecision?.(event, decision, rowId);
 
       if (decision.action === "buffer_only" || decision.action === "pause") {
         await this.#handlers.onBuffered?.(event, decision, rowId);
+        this.#emitOperationDuration("adapter.ingest", operationStartedAt, "buffered");
         return {
           rowId,
           decision,
@@ -149,13 +168,32 @@ export class TransportMonitorAdapter {
       }
 
       if (decision.deliveryMode === "dedupe_bypass") {
+        deliveryAttempted = true;
+        deliveryStartedAt = this.#now();
+        this.#emitLifecycleAt(deliveryStartedAt, {
+          type: "deliveryAttempted",
+          rowId,
+          eventId: event.id,
+          deliveryMode: decision.deliveryMode,
+          replay: false,
+        });
         await this.#handlers.deliverToOrder(event, {
           rowId,
           sourceStreamId: sourceStreamId ?? null,
           deliveryMode: decision.deliveryMode,
           replay: false,
         });
+        deliveryHandlerCompleted = true;
+        this.#emitLifecycle({
+          type: "deliveryHandlerCompleted",
+          rowId,
+          eventId: event.id,
+          deliveryMode: decision.deliveryMode,
+          replay: false,
+          durationMs: this.#durationSince(deliveryStartedAt),
+        });
         this.#runtime.acknowledgeIngressDelivery([rowId]);
+        this.#emitOperationDuration("adapter.ingest", operationStartedAt, "delivered");
         return {
           rowId,
           decision,
@@ -164,13 +202,32 @@ export class TransportMonitorAdapter {
         };
       }
 
+      deliveryAttempted = true;
+      deliveryStartedAt = this.#now();
+      this.#emitLifecycleAt(deliveryStartedAt, {
+        type: "deliveryAttempted",
+        rowId,
+        eventId: event.id,
+        deliveryMode: decision.deliveryMode,
+        replay: false,
+      });
       await this.#handlers.deliverToDedupe(event, {
         rowId,
         sourceStreamId: sourceStreamId ?? null,
         deliveryMode: decision.deliveryMode,
         replay: false,
       });
+      deliveryHandlerCompleted = true;
+      this.#emitLifecycle({
+        type: "deliveryHandlerCompleted",
+        rowId,
+        eventId: event.id,
+        deliveryMode: decision.deliveryMode,
+        replay: false,
+        durationMs: this.#durationSince(deliveryStartedAt),
+      });
       this.#runtime.acknowledgeIngressDelivery([rowId]);
+      this.#emitOperationDuration("adapter.ingest", operationStartedAt, "delivered");
       return {
         rowId,
         decision,
@@ -178,6 +235,29 @@ export class TransportMonitorAdapter {
         forwardedTo: "dedupe",
       };
     } catch (error) {
+      if (deliveryAttempted && !deliveryHandlerCompleted) {
+        this.#emitLifecycle({
+          type: "deliveryFailed",
+          rowId,
+          eventId: event.id,
+          deliveryMode: decision.deliveryMode,
+          replay: false,
+          durationMs: this.#durationSince(deliveryStartedAt),
+          reasonCode: "DELIVERY_HANDLER_REJECTED",
+        });
+      } else {
+        this.#emitLifecycle({
+          type: "deliveryIndeterminate",
+          rowId,
+          eventId: event.id,
+          deliveryMode: decision.deliveryMode,
+          replay: false,
+          reasonCode: deliveryHandlerCompleted
+            ? "DELIVERY_ACKNOWLEDGEMENT_UNOBSERVED"
+            : "ADAPTER_COMPLETION_UNOBSERVED",
+        });
+      }
+      this.#emitOperationDuration("adapter.ingest", operationStartedAt, "failed");
       throw new MonitorIndeterminateOutcomeError(
         "complete adapter ingress delivery",
         rowId,
@@ -198,11 +278,13 @@ export class TransportMonitorAdapter {
   }
 
   async #pumpReplayBatchInternal(limit?: number): Promise<ReplayPumpResult> {
+    const operationStartedAt = this.#now();
     const batch = this.#runtime.claimManagedReplayBatch(limit);
     await this.#notifyReplayChange();
 
     if (batch.entries.length === 0) {
       await this.#notifyReplayChange();
+      this.#emitOperationDuration("adapter.pumpReplayBatch", operationStartedAt, "empty");
       return {
         snapshot: this.#runtime.getReplaySnapshot(),
         claimedCount: 0,
@@ -212,20 +294,45 @@ export class TransportMonitorAdapter {
     }
 
     const claimedRowIds: number[] = [];
+    const handlerCompletedEntries: typeof batch.entries = [];
+    let activeEntry: (typeof batch.entries)[number] | null = null;
+    let activeEntryStartedAt = operationStartedAt;
 
     try {
       for (const entry of batch.entries) {
+        activeEntry = entry;
         claimedRowIds.push(entry.rowId);
+        activeEntryStartedAt = this.#now();
+        this.#emitLifecycleAt(activeEntryStartedAt, {
+          type: "deliveryAttempted",
+          rowId: entry.rowId,
+          eventId: entry.event.id,
+          deliveryMode: "replay_through_dedupe",
+          replay: true,
+          attempt: entry.replayAttempts,
+        });
         await this.#handlers.deliverToDedupe(entry.event, {
           rowId: entry.rowId,
           sourceStreamId: entry.sourceStreamId,
           deliveryMode: "replay_through_dedupe",
           replay: true,
         });
+        handlerCompletedEntries.push(entry);
+        this.#emitLifecycle({
+          type: "deliveryHandlerCompleted",
+          rowId: entry.rowId,
+          eventId: entry.event.id,
+          deliveryMode: "replay_through_dedupe",
+          replay: true,
+          attempt: entry.replayAttempts,
+          durationMs: this.#durationSince(activeEntryStartedAt),
+        });
+        activeEntry = null;
       }
 
       const snapshot = this.#runtime.acknowledgeManagedReplayBatch(claimedRowIds);
       await this.#notifyReplayChange();
+      this.#emitOperationDuration("adapter.pumpReplayBatch", operationStartedAt, "completed");
       return {
         snapshot,
         claimedCount: claimedRowIds.length,
@@ -233,10 +340,34 @@ export class TransportMonitorAdapter {
         completed: snapshot.state === "completed" || snapshot.state === "idle",
       };
     } catch (error) {
+      if (activeEntry !== null) {
+        this.#emitLifecycle({
+          type: "deliveryFailed",
+          rowId: activeEntry.rowId,
+          eventId: activeEntry.event.id,
+          deliveryMode: "replay_through_dedupe",
+          replay: true,
+          attempt: activeEntry.replayAttempts,
+          durationMs: this.#durationSince(activeEntryStartedAt),
+          reasonCode: "DELIVERY_HANDLER_REJECTED",
+        });
+      }
+      for (const completedEntry of handlerCompletedEntries) {
+        this.#emitLifecycle({
+          type: "deliveryIndeterminate",
+          rowId: completedEntry.rowId,
+          eventId: completedEntry.event.id,
+          deliveryMode: "replay_through_dedupe",
+          replay: true,
+          attempt: completedEntry.replayAttempts,
+          reasonCode: "REPLAY_BATCH_ACKNOWLEDGEMENT_UNOBSERVED",
+        });
+      }
       const message =
         error instanceof Error ? error.message : "unknown replay failure";
       const snapshot = this.#runtime.failManagedReplay(message, claimedRowIds);
       await this.#notifyReplayChange();
+      this.#emitOperationDuration("adapter.pumpReplayBatch", operationStartedAt, "failed");
       return {
         snapshot,
         claimedCount: claimedRowIds.length,
@@ -365,6 +496,44 @@ export class TransportMonitorAdapter {
         deliveryMode !== "dedupe_bypass" &&
         Number(count ?? 0) > 0,
     );
+  }
+
+  #now(): bigint {
+    try {
+      return this.#runtime.getConfig().now?.() ?? BigInt(Date.now());
+    } catch {
+      return BigInt(Date.now());
+    }
+  }
+
+  #durationSince(startedAt: bigint): string {
+    const endedAt = this.#now();
+    return (endedAt >= startedAt ? endedAt - startedAt : 0n).toString();
+  }
+
+  #emitLifecycle(event: MonitorLifecycleObservation): void {
+    this.#emitLifecycleAt(this.#now(), event);
+  }
+
+  #emitLifecycleAt(occurredAt: bigint, event: MonitorLifecycleObservation): void {
+    try {
+      (this.lifecycle as LifecycleDispatcher).publish({
+        ...event,
+        occurredAtMs: occurredAt.toString(),
+      } as MonitorLifecycleEvents[MonitorLifecycleEventName]);
+    } catch {
+      // Lifecycle observation is best effort and cannot alter adapter outcomes.
+    }
+  }
+
+  #emitOperationDuration(operation: string, startedAt: bigint, outcome: string): void {
+    const endedAt = this.#now();
+    this.#emitLifecycleAt(endedAt, {
+      type: "operationDurationObserved",
+      operation,
+      durationMs: (endedAt >= startedAt ? endedAt - startedAt : 0n).toString(),
+      outcome,
+    });
   }
 }
 

@@ -1,5 +1,9 @@
 # Event Timing Evidence
 
+Lifecycle events use JSON-safe decimal-string `occurredAtMs`. `operationDurationObserved` and delivery duration fields use decimal-string milliseconds measured from the configured monitor clock, clamped to zero if a caller-supplied clock moves backward. These are local process observations, not durable timestamps or cross-process ordering evidence.
+
+Attempt events mark method or handler entry. Handler-completed events mark application callback resolution. Acknowledgement, replay, retention, and persisted health facts are emitted only after their SQLite mutation returns successfully. Event publication order can describe one owner's local enqueue sequence, but it does not establish a total distributed order.
+
 `MonitorEventTimingEvidence` is a type-only contract for handing neutral timing facts to application-owned policy code.
 
 ```ts
