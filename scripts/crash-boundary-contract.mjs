@@ -255,7 +255,7 @@ function expectedRecovery(rows) {
 }
 
 function assertInspection(actual, expectedRowsForScenario, label) {
-  assert.equal(actual.schemaVersion, 2, `${label}: schema version`);
+  assert.equal(actual.schemaVersion, 3, `${label}: schema version`);
   assert.equal(actual.journalMode, "wal", `${label}: journal mode`);
   assert.equal(actual.integrity, "ok", `${label}: integrity check`);
   assert.deepEqual(actual.rows, expectedRowsForScenario, `${label}: persisted rows`);
@@ -271,7 +271,7 @@ try {
     operation: "append",
     result: { rowId: 1 },
     pendingRows: 1,
-    schemaVersion: 2,
+    schemaVersion: 3,
   });
   assertInspection(
     inspectDatabase(controlPath),
@@ -308,7 +308,7 @@ try {
 
   assert.equal(characterized.length, OPERATIONS.length * 2);
   console.log(
-    `crash-boundary characterization passed: built-package control plus ${characterized.length} forced-termination boundaries preserved schema v2, WAL recovery, integrity, exact row state, and restart replay eligibility`,
+    `crash-boundary characterization passed: built-package control plus ${characterized.length} forced-termination boundaries preserved schema v3, WAL recovery, integrity, exact row state, and restart replay eligibility`,
   );
 } finally {
   rmSync(root, { recursive: true, force: true });

@@ -1,4 +1,5 @@
 import type { TransportMonitorAdapter } from "../transport/TransportMonitorAdapter.js";
+import { LifecycleDispatcher } from "../lifecycle/LifecycleDispatcher.js";
 
 export interface MonitorSchedulerTimerApi {
   setTimeout(callback: () => void, delayMs: number): ReturnType<typeof setTimeout>;
@@ -111,13 +112,16 @@ export class MonitorScheduler {
   async #runTick(): Promise<void> {
     this.#tickCount += 1;
     const now = this.#now();
+    let outcome = "completed";
     try {
       if (this.#healthProbe && elapsedMs(now, this.#lastHealthAt) >= this.#healthIntervalMs) {
         await this.#healthProbe();
         this.#lastHealthAt = now;
       }
       if (elapsedMs(now, this.#lastReplayAt) >= this.#replayIntervalMs) {
-        await this.#adapter.reconcileRecovery(this.#replayBatchSize);
+        if (this.#replayTargetsOnline()) {
+          await this.#adapter.reconcileRecovery(this.#replayBatchSize);
+        }
         this.#lastReplayAt = now;
       }
       if (elapsedMs(now, this.#lastPruneAt) >= this.#pruneIntervalMs) {
@@ -125,8 +129,22 @@ export class MonitorScheduler {
         this.#lastPruneAt = now;
       }
     } catch (error) {
+      outcome = "failed";
       this.#lastError = error;
       this.#onError?.(error);
+    } finally {
+      try {
+        const endedAt = this.#now();
+        (this.#adapter.lifecycle as LifecycleDispatcher).publish({
+          type: "operationDurationObserved",
+          occurredAtMs: endedAt.toString(),
+          operation: "scheduler.tick",
+          durationMs: (endedAt >= now ? endedAt - now : 0n).toString(),
+          outcome,
+        });
+      } catch {
+        // Lifecycle observation is best effort and cannot alter scheduler outcomes.
+      }
     }
   }
 
@@ -138,6 +156,11 @@ export class MonitorScheduler {
       if (remaining > 0n) return Number(remaining > 2_147_483_647n ? 2_147_483_647n : remaining);
     }
     return Math.min(this.#healthIntervalMs, this.#replayIntervalMs, this.#pruneIntervalMs);
+  }
+
+  #replayTargetsOnline(): boolean {
+    const health = this.#adapter.getRuntime().getHealthSnapshot();
+    return health.dedupe.state === "online" && health["causal-order"].state === "online";
   }
 }
 

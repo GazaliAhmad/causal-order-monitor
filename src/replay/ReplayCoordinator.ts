@@ -1,6 +1,7 @@
 import type { MonitorReplayConfig } from "../types/config.js";
 import type { MonitorComponent, MonitorHealthState } from "../types/events.js";
 import type { ReplaySessionSnapshot } from "../types/snapshots.js";
+import type { MonitorLifecyclePublisher } from "../types/lifecycle.js";
 import {
   SQLiteReservoir,
   type ReservoirReplayEntry,
@@ -34,16 +35,19 @@ export class ReplayCoordinator {
   readonly #config: MonitorReplayConfig;
   readonly #reservoir: SQLiteReservoir;
   readonly #now: () => bigint;
+  readonly #publishLifecycle: MonitorLifecyclePublisher | null;
   #snapshot: ReplaySessionSnapshot;
 
   constructor(
     config: MonitorReplayConfig,
     reservoir: SQLiteReservoir,
     now: () => bigint,
+    publishLifecycle: MonitorLifecyclePublisher | null = null,
   ) {
     this.#config = config;
     this.#reservoir = reservoir;
     this.#now = now;
+    this.#publishLifecycle = publishLifecycle;
     this.#snapshot = this.#createRestartSnapshot();
   }
 
@@ -186,6 +190,14 @@ export class ReplayCoordinator {
 
     this.#reservoir.reclaimStaleReplayRows(this.#config.retryBackoffMs);
     const entries = this.#reservoir.claimReplayBatch(limit);
+    if (entries.length > 0) {
+      this.#publishLifecycle?.({
+        type: "replayBatchClaimed",
+        occurredAtMs: this.#lifecycleNow().toString(),
+        rowIds: entries.map((entry) => entry.rowId),
+        count: entries.length,
+      });
+    }
 
     if (entries.length === 0) {
       const remainingRows = this.#reservoir.getStats().totalPendingRows;
@@ -227,7 +239,7 @@ export class ReplayCoordinator {
     const now = this.#now();
     const nextRetryAt = now + this.#config.retryBackoffMs;
     this.#reservoir.resetReplayBatchToPending(rowIds, nextRetryAt);
-    return this.#commit({
+    const snapshot = this.#commit({
       ...this.#snapshot,
       state: "failed",
       endedAt: now,
@@ -235,6 +247,16 @@ export class ReplayCoordinator {
       nextRetryAt,
       consecutiveFailureCount: this.#snapshot.consecutiveFailureCount + 1,
     });
+    if (rowIds.length > 0) {
+      this.#publishLifecycle?.({
+        type: "replayBatchFailed",
+        occurredAtMs: this.#lifecycleNow().toString(),
+        rowIds: [...new Set(rowIds)],
+        count: new Set(rowIds).size,
+        reasonCode: "REPLAY_DELIVERY_FAILED",
+      });
+    }
+    return snapshot;
   }
 
   abort(reason: string, rowIds: ReadonlyArray<number> = []): ReplaySessionSnapshot {
@@ -305,8 +327,50 @@ export class ReplayCoordinator {
   }
 
   #commit(snapshot: ReplaySessionSnapshot): ReplaySessionSnapshot {
+    const previous = this.#snapshot;
+    if (sameReplaySnapshot(previous, snapshot)) {
+      return this.getSnapshot();
+    }
+    this.#reservoir.recordReplaySnapshot(snapshot);
     this.#snapshot = { ...snapshot };
-    this.#reservoir.recordReplaySnapshot(this.#snapshot);
+    if (previous.state !== snapshot.state) {
+      this.#publishLifecycle?.({
+        type: "replayStateChanged",
+        occurredAtMs: this.#lifecycleNow().toString(),
+        previousState: previous.state,
+        state: snapshot.state,
+        queuedEventCount: snapshot.queuedEventCount,
+        deliveredEventCount: snapshot.deliveredEventCount,
+        nextRetryAtMs: snapshot.nextRetryAt?.toString() ?? null,
+      });
+    }
     return this.getSnapshot();
   }
+
+  #lifecycleNow(): bigint {
+    try {
+      return this.#now();
+    } catch {
+      return BigInt(Date.now());
+    }
+  }
+}
+
+function sameReplaySnapshot(
+  left: ReplaySessionSnapshot,
+  right: ReplaySessionSnapshot,
+): boolean {
+  return (
+    left.state === right.state &&
+    left.targetPath === right.targetPath &&
+    left.queuedEventCount === right.queuedEventCount &&
+    left.deliveredEventCount === right.deliveredEventCount &&
+    left.startedAt === right.startedAt &&
+    left.endedAt === right.endedAt &&
+    left.lastError === right.lastError &&
+    left.nextRetryAt === right.nextRetryAt &&
+    left.consecutiveFailureCount === right.consecutiveFailureCount &&
+    left.recoveryHeartbeatCount === right.recoveryHeartbeatCount &&
+    left.requiredRecoveryHeartbeats === right.requiredRecoveryHeartbeats
+  );
 }

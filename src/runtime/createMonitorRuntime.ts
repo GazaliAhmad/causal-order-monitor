@@ -1,5 +1,4 @@
 import { MonitorRuntime } from "./MonitorRuntime.js";
-import type { MonitorConfig } from "../types/config.js";
 import {
   loadMonitorConfigFile,
   resolveMonitorConfigFromEnvironment,
@@ -8,7 +7,7 @@ import {
 } from "../config.js";
 
 export function createMonitorRuntime(
-  config: Partial<MonitorConfig> = {},
+  config: MonitorConfigOverride = {},
 ): MonitorRuntime {
   return new MonitorRuntime(config);
 }

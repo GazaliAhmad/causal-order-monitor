@@ -1,126 +1,75 @@
 # @causal-order/monitor
 
-Health-aware buffering, replay, and operator monitoring for the `causal-order` stack.
+Keep accepting events during bounded downstream outages, persist them locally, and replay them through deduplication before causal ordering resumes. `@causal-order/monitor` adds health-aware routing, controlled recovery, and operator visibility to a `causal-order` pipeline.
 
-The supported integration path is:
+Published package version: `v0.5.0`
+
+## Stack Position
 
 ```text
 @causal-order/transport -> @causal-order/monitor -> @causal-order/dedupe -> causal-order
 ```
 
-`@causal-order/monitor` owns buffering, degraded routing, and controlled replay between transport ingestion and downstream delivery. This lets the pipeline keep accepting events and preserve backlog when `@causal-order/dedupe` or `causal-order` becomes unavailable. Buffered events re-enter the downstream path through dedupe before causal ordering.
+The monitor owns ingress buffering, degraded routing, and controlled replay between transport and downstream delivery. Buffered events always re-enter the normal downstream path through `@causal-order/dedupe` before causal ordering.
 
-The monitor also owns the SQLite event reservoir behind `SQLiteReservoir`. This is separate from any SQLite adapter offered by `@causal-order/persistence`: persistence-owned adapters serve persistence concerns such as WALs, checkpoints, and component state, while the monitor reservoir serves bounded ingress buffering and replay. They have independent data, schemas, lifecycles, and APIs; `@causal-order/persistence` does not absorb or abstract the monitor reservoir.
+`SQLiteReservoir` is owned entirely by this package and serves bounded ingress buffering and replay. It is not a general persistence adapter for component WALs, checkpoints, or state; its data, schema, lifecycle, and API are specific to the monitor.
 
-## Install
+## Install and Requirements
 
 ```bash
 npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-order/transport
 ```
 
-`@causal-order/monitor` now uses the built-in `node:sqlite` module, so no separate SQLite package is required. `causal-order`, `@causal-order/dedupe`, and `@causal-order/transport` are expected alongside this package as peers.
-
-## Supported Stack Versions
+- Node.js `>=22.13.0`
+- ESM-only output
+- built-in `node:sqlite`; no separate SQLite package is required
 
 | Package | Supported versions | Role |
 | --- | --- | --- |
-| `@causal-order/transport` | `^0.1.2` | Runtime peer. |
-| `@causal-order/dedupe` | `^1.1.1` | Runtime peer and required replay path. |
-| `causal-order` | `^1.0.0` | Runtime peer. |
-| `@causal-order/testing` | `^0.2.6` | Optional integration-testing tooling; not a runtime peer. |
+| `@causal-order/transport` | `^0.1.2` | Runtime peer |
+| `@causal-order/dedupe` | `^1.1.1` | Runtime peer and replay path |
+| `causal-order` | `^1.0.0` | Runtime peer |
+| `@causal-order/testing` | `^0.2.6` | Optional integration-test tooling |
 
-## What It Does
+## When to Use It
 
-- buffers ingress events in SQLite so downstream outages do not immediately become data loss
-- tracks health for `transport`, `dedupe`, and `causal-order`
-- switches routing behavior when parts of the stack degrade or go offline
-- replays buffered backlog through `@causal-order/dedupe` after recovery
-- exposes snapshots and derived inspection state for operators and automation
+Use the monitor when an existing `causal-order` pipeline needs to:
 
-## Version Status
+- continue accepting events during bounded downstream outages
+- buffer ingress safely on local storage
+- coordinate recovery instead of mixing backlog and live flow loosely
+- replay buffered work through dedupe before causal ordering
+- expose health, admission, backlog, replay, and storage state to operators or automation
 
-- Current npm release: `v0.4.0`
-- Current repository version: `v0.4.0`
-- Status: `v0.4.0` delivers the packed-stack integration and correctness-invariant release.
+### When Not to Use It
 
-Running `npm install @causal-order/monitor` installs `v0.4.0` from the npm registry.
+The monitor is not:
 
-## When To Use It
+- a distributed queue or indefinite-retention system
+- a multi-writer coordination system, cross-process lock, or leader-election mechanism
+- permission for multiple processes to share one live reservoir
+- a replacement for application-owned event-lateness policy
 
-Use this package when you already have a `causal-order` pipeline and want a monitor layer that can:
+## Integration Model
 
-- keep ingesting while `causal-order` is offline
-- throttle or bypass parts of the path when `dedupe` is unhealthy
-- coordinate replay after recovery instead of mixing backlog and live flow loosely
-- give operators a compact view of backlog, replay, retry, and health state
+`TransportMonitorAdapter` is the preferred application integration. It calls application-provided delivery handlers, acknowledges successful delivery, and manages replay through the adapter surface.
 
-## Package Model
+Use `MonitorRuntime` only when deliberate manual control over ingress, health, replay, and storage is required. Adapter-managed replay and manual runtime replay must not be mixed on the same runtime; invalid mixed control fails with `ReplayOwnershipError`.
 
-The package gives you two main integration styles:
+One live SQLite reservoir has one owning `MonitorRuntime` or `TransportMonitorAdapter` process. Adapter call serialization is process-local; it is not a cross-process lock, leader-election mechanism, or coordination mechanism for other runtimes or processes.
 
-- `TransportMonitorAdapter` if you want a higher-level wrapper that calls your delivery handlers and manages replay pumping through that adapter surface
-- `createMonitorRuntime()` or `MonitorRuntime` if you want direct control over ingress, health updates, replay, and storage
-
-For most application integrations, prefer `TransportMonitorAdapter`.
-
-Use `MonitorRuntime` when you intentionally want the lower-level/manual orchestration path.
-
-These are now enforced as separate replay-orchestration styles on the same runtime instance:
-
-- adapter-managed replay through `TransportMonitorAdapter`
-- manual replay control through `MonitorRuntime`
-
-If a runtime is adapter-managed, direct manual replay commands on that runtime now fail fast with `ReplayOwnershipError` instead of allowing mixed control ownership.
-
-Concurrent `pumpReplayBatch()` and `reconcileRecovery()` calls on one `TransportMonitorAdapter` coalesce onto the same in-flight replay operation. The first call's batch limit governs that operation, and all callers receive its result. This serializes scheduler and caller ticks within one adapter while preserving the existing replay ownership boundary.
-
-One live SQLite reservoir has one owning `MonitorRuntime` (or one `TransportMonitorAdapter` built on that runtime). The adapter-local operation guard only serializes calls made through that adapter; it is not a cross-process lock, leader-election mechanism, or permission for multiple live processes to open the same reservoir. Stop and close the owner before backup, restore, relocation, or restart, then reopen the reservoir under exactly one owner.
-
-`MonitorScheduler` in `@causal-order/monitor/scheduler` is an optional caller-owned reference scheduler. It serializes health probing, replay reconciliation, and bounded pruning around one adapter, respects persisted replay retry deadlines, and stops idempotently. Health probes remain application-owned callbacks; stopping the scheduler does not close the adapter unless `closeAdapterOnStop: true` is selected.
-
-Advanced, inspection, and testing surfaces are documented in the sections below; they are secondary to the normal runtime and adapter paths.
-
-## Subpath Imports
-
-The package exposes these official subpath entrypoints:
-
-| Subpath | Purpose |
-| --- | --- |
-| `@causal-order/monitor/config` | Configuration loading and helpers; lightweight entrypoint. |
-| `@causal-order/monitor/health` | Health tracking; lightweight entrypoint. |
-| `@causal-order/monitor/inspect` | Snapshot inspection; lightweight entrypoint. |
-| `@causal-order/monitor/replay` | Replay coordination contracts. |
-| `@causal-order/monitor/routing` | Delivery routing; lightweight entrypoint. |
-| `@causal-order/monitor/runtime` | Lower-level manual runtime integration. |
-| `@causal-order/monitor/storage` | SQLite reservoir primitives. |
-| `@causal-order/monitor/testing` | Harness metadata; lightweight entrypoint. |
-| `@causal-order/monitor/throttle` | Throttle decisions; lightweight entrypoint. |
-| `@causal-order/monitor/transport` | Preferred higher-level adapter integration. |
-| `@causal-order/monitor/types` | TypeScript contracts; lightweight entrypoint. |
-
-## Root Migration Notes
-
-In `v0.1.3`, selected advanced root exports are deprecated but remain available for compatibility. Their supported replacement is the corresponding published subpath.
-
-This is a non-breaking migration path: existing root imports still work.
-
-`v0.1.3` root-to-subpath migrations:
-
-- `HealthTracker`: `@causal-order/monitor` -> `@causal-order/monitor/health`
-- `ReplayCoordinator` and `ReplayBatch`: `@causal-order/monitor` -> `@causal-order/monitor/replay`
-- `DeliveryRouter`: `@causal-order/monitor` -> `@causal-order/monitor/routing`
-- `ThrottleController`: `@causal-order/monitor` -> `@causal-order/monitor/throttle`
-
-Example:
-
-```ts
-import { ReplayCoordinator } from "@causal-order/monitor/replay";
-```
+See the [API reference](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/api-reference.md) for the lower-level runtime example, scheduler, and replay-operation details.
 
 ## Quick Start
 
 ```ts
-import { TransportMonitorAdapter } from "@causal-order/monitor";
+import {
+  createDefaultMonitorConfig,
+  TransportMonitorAdapter,
+} from "@causal-order/monitor";
+
+const config = createDefaultMonitorConfig();
+config.reservoir.databasePath = "./.causal-order-monitor/monitor.sqlite";
 
 const monitor = new TransportMonitorAdapter(
   {
@@ -134,297 +83,69 @@ const monitor = new TransportMonitorAdapter(
       console.log("buffered", { rowId, action: decision.action, eventId: event.id });
     },
   },
-  {
-    reservoir: {
-      databasePath: "./.causal-order-monitor/monitor.sqlite",
-    },
-  },
+  config,
 );
 
-monitor.observeHeartbeat("transport");
-monitor.observeHeartbeat("dedupe");
-monitor.observeHeartbeat("causal-order");
+try {
+  monitor.observeHeartbeat("transport");
+  monitor.observeHeartbeat("dedupe");
+  monitor.observeHeartbeat("causal-order");
 
-await monitor.ingest({
-  id: "evt-1001",
-  nodeId: "transport-a",
-  clock: {
-    physicalTimeMs: BigInt(Date.now()),
-  },
-  payload: {
-    entityId: "order-42",
-    operation: "created",
-  },
-});
+  await monitor.ingest({
+    id: "evt-1001",
+    nodeId: "transport-a",
+    clock: { physicalTimeMs: BigInt(Date.now()) },
+    payload: { entityId: "order-42", operation: "created" },
+  });
 
-const snapshot = monitor.getInspectedSnapshot();
-console.log(snapshot.operationalState);
-```
-
-## Runtime Example
-
-If you want lower-level control, use the runtime directly:
-
-```ts
-import { createMonitorRuntime } from "@causal-order/monitor";
-
-const runtime = createMonitorRuntime({
-  reservoir: {
-    databasePath: "./.causal-order-monitor/monitor.sqlite",
-  },
-});
-
-runtime.observeHeartbeat("transport");
-runtime.observeHeartbeat("dedupe");
-runtime.observeHeartbeat("causal-order");
-
-const { rowId, decision } = runtime.ingestTransportEvent({
-  id: "evt-1001",
-  nodeId: "transport-a",
-  clock: {
-    physicalTimeMs: BigInt(Date.now()),
-  },
-  payload: {
-    entityId: "order-42",
-    operation: "created",
-  },
-});
-
-if (decision.action === "accept" && decision.deliveryMode === "normal") {
-  await sendToDedupe();
-  runtime.acknowledgeIngressDelivery([rowId]);
+  const operator = monitor.getOperatorSnapshot();
+  console.log(operator.status, operator.backlog);
+} finally {
+  monitor.close();
 }
 ```
 
-## Routing And Recovery Behavior
+`sendToDedupe` and `sendToCausalOrder` are application-owned delivery functions. The first is the normal and replay route; the second is used only when the routing decision permits throttled dedupe bypass.
 
-The monitor can move between a few main operating modes:
+## Core Behavior
 
-- `normal`: live flow goes through dedupe as usual
-- `dedupe_bypass_throttled`: live flow can bypass dedupe with throttling when dedupe is unhealthy
-- `order_buffer_only`: events are buffered while `causal-order` is offline
-- `full_outage_buffer`: events stay buffered during broader outage conditions
-- `replay_through_dedupe`: buffered backlog drains through dedupe during recovery
+### Routing and Recovery
 
-Recovery is intentionally conservative:
+- `normal`: live events flow through dedupe
+- `dedupe_bypass_throttled`: live events may bypass unhealthy dedupe under throttling
+- `order_buffer_only`: events remain buffered while causal ordering is unavailable
+- `full_outage_buffer`: events remain buffered during a wider outage
+- `replay_through_dedupe`: recovery backlog drains through dedupe
 
-- the rolling SQLite buffer defaults to `4h`
-- the maximum dual-outage retention window defaults to `6h`
-- replay returns through `@causal-order/dedupe`
-- replay waits for configured recovery confirmation before it starts draining after a real downstream recovery transition
-- replay failure applies a retry backoff before trying again
-- live flow stays gated during pre-replay confirmation, failed replay backoff, active replay drain, and post-replay confirmation
+Replay waits for configured recovery confirmation. Failures apply retry backoff, and live flow remains gated during pre-replay confirmation, retry waiting, active drain, and post-replay confirmation. Replay always returns through dedupe.
 
-## Ingress HTTP Semantics
+### Admission and HTTP Mapping
 
-If `/monitor` is sitting behind an HTTP ingress boundary, the intended status mapping is:
+| Outcome | HTTP status |
+| --- | --- |
+| Accepted live work | `202 Accepted` |
+| Accepted buffered work | `202 Accepted` |
+| Protective refusal | `503 Service Unavailable` |
 
-- `accept` -> `202 Accepted`
-- `buffer_only` -> `202 Accepted`
-- `pause` -> `503 Service Unavailable`
+`TransportMonitorAdapter.ingest()` returns an `admission` object for accepted work. Routing-policy refusal throws `MonitorAdmissionRefusedError` before persistence, with code `ERR_MONITOR_ADMISSION_REFUSED` and `httpStatus: 503`. Configured logical-capacity or filesystem-reserve refusal instead throws `MonitorCapacityRefusedError`, with code `ERR_MONITOR_CAPACITY_REFUSED`, `httpStatus: 503`, the limiting dimension, stable reason evidence, and retry guidance. Neither refusal persists the rejected event.
 
-That means:
+Ordinary buffering and protective stops—including configured reservoir-capacity refusal—do not use `429`; protective refusal uses `503`. Client-, tenant-, and commercial-quota or rate-limit policies remain outside the monitor’s scope and should be enforced by the application or API gateway.
 
-- if the event was accepted into the monitor, even if it was only buffered in SQLite, the ingress contract should return `202`
-- if the monitor is refusing admission because it is in a true protective stop state, the ingress contract should return `503`
+### Retention
 
-`TransportMonitorAdapter.ingest()` returns an `admission` object for accepted work. Its `posture`, `accepted`, `httpStatus`, and `reasonCode` fields make the distinction explicit. A protective refusal throws `MonitorAdmissionRefusedError` before a row is persisted; it has code `ERR_MONITOR_ADMISSION_REFUSED` and `httpStatus: 503`.
+Retention is prune-driven, not ingest-driven. Reaching `fullOutageMaxWindowMs` does not by itself reject every new event. When pruning runs, expired pending rows become `dead_letter`; delivered and dead-letter evidence then follow independent retention clocks. Each prune call bounds both transitions and deletions by `pruneBatchSize`, so large cleanup sets need repeated calls.
 
-The current monitor semantics do not use `429 Too Many Requests` for ordinary buffering or protective-stop behavior.
+## Configuration Summary
 
-## Retention Semantics
+Common settings are:
 
-The retention boundary is prune-driven, not ingest-driven.
-
-In practical terms:
-
-- the monitor does not immediately hard-reject ingress when the reservoir reaches the `fullOutageMaxWindowMs` ceiling
-- it keeps accepting and buffering ingress while routing decisions such as `buffer_only` or `pause` express backpressure posture
-- live forwarding stops when the active routing mode requires it
-- older unacknowledged rows age out when pruning runs and are marked `dead_letter` once they pass the hard cutoff
-
-So the current behavior is closer to “drop older buffered rows once they age past the ceiling” than “reject every new ingress immediately at the ceiling.”
-
-This describes the current `v0.4.0` behavior. Future quota work is governed by the accepted [reservoir capacity, admission, and overflow ADR](docs/adr/0001-reservoir-capacity-admission-and-overflow.md); those controls are planned for `v0.5.0` and are not available in the current release.
-
-When a pending row ages out, it transitions to `dead_letter` and starts its own evidence-retention clock. Delivered evidence is retained independently. Each call to `pruneReservoir()` marks at most `pruneBatchSize` pending rows and deletes at most `pruneBatchSize` eligible terminal rows, so larger cleanup sets require repeated calls.
-
-## Schema Compatibility
-
-`v0.2.0` established SQLite schema version 1 as an explicit persistence contract. `v0.2.1` added deterministic restart and upgrade recovery. `v0.2.2` migrates that format to schema version 2 so terminal evidence retention can be measured from the delivered or dead-letter transition.
-
-`v0.2.3` keeps schema version 2 and the v0.2.2 public surface unchanged while hardening crash, storage-failure, concurrency, payload-serialization, and shutdown behavior. Close is idempotent, post-close mutable work is rejected consistently, and accepted rows remain recoverable when shutdown overlaps delivery.
-
-- new reservoirs record their schema version during transactional initialization
-- compatible unversioned databases created by earlier monitor releases migrate transactionally without discarding rows
-- current databases reopen without schema mutation
-- newer, incomplete, and incompatible schemas fail before mutation with typed errors
-- `SQLiteReservoir.getSchemaInfo()` and `MonitorRuntime.getSchemaInfo()` expose the current and latest supported schema versions
-- file-backed reservoirs use WAL journaling with `synchronous=FULL` for higher write concurrency without reducing transaction synchronization
-
-On process restart, persisted row state is authoritative:
-
-- pending backlog automatically restores a queued replay posture and keeps live flow gated
-- interrupted `replaying` claims return immediately to `pending` because their in-memory owner ended with the previous process
-- an entirely retry-waiting backlog restores its failed/retry-waiting posture using the persisted absolute retry deadline and replay-attempt evidence
-- delivered and dead-letter rows remain terminal and are not returned to normal replay eligibility
-- replay ordering continues to use monitor ingest time and row identity
-- persisted `replay_sessions` remain audit history; they do not override current row state when reconstructing the coordinator
-
-Schema constants, information types, and compatibility errors are available through `@causal-order/monitor/storage`.
-
-Package and schema versions are independent: a package update does not imply a database migration unless the schema version changes.
-
-Schema version 2 adds `terminal_at_ms`. Existing terminal rows receive their original monitor-ingest time during migration; new delivered and dead-letter transitions record the transition time.
-
-## Configuration
-
-For most deployments, the preferred bootstrap path is:
-
-1. `loadMonitorConfigFile()` or `loadMonitorConfigFromEnvironment()` if you want an explicit config-loading step
-2. `createMonitorRuntimeFromFile()` or `createMonitorRuntimeFromEnvironment()` if you want direct runtime bootstrapping
-3. `createTransportMonitorAdapterFromFile()` or `createTransportMonitorAdapterFromEnvironment()` if you want the preferred adapter integration path with file/env config
-
-The lower-level `resolveMonitorConfig()` and `resolveMonitorConfigFromEnvironment()` helpers are still public, but they are better treated as advanced composition tools than the first thing most deployers should reach for.
-
-`createDefaultMonitorConfig()` returns the full configuration shape. Common settings:
-
-- `reservoir.databasePath`: SQLite path, default `./.causal-order-monitor/monitor.sqlite`
-- `reservoir.rollingBufferWindowMs`: normal rolling retention window
-- `reservoir.fullOutageMaxWindowMs`: hard retention ceiling during deeper outages
-- `transport.heartbeatGraceMs`: heartbeat grace period before transport is considered stale
-- `reservoir.pruneBatchSize`: maximum number of rows to dead-letter or delete in each SQLite prune batch
-- `reservoir.deliveredRetentionMs`: delivered evidence retention, default `24h`
-- `reservoir.deadLetterRetentionMs`: dead-letter evidence retention, default `168h` (7 days)
-- `reservoir.walAutoCheckpointPages`: SQLite automatic WAL checkpoint threshold, default `1000` pages; set `0` to disable automatic checkpoints
-- `health.*.degradedAfterMs` and `health.*.offlineAfterMs`: thresholds for each component
-- `throttle.*`: ingress limits for each throttle tier
-- `replay.healthConfirmationHeartbeats`: heartbeats required before replay resumes
-- `replay.pauseLiveFlowDuringReplay`: whether live flow stays gated during drain
-- `replay.retryBackoffMs`: delay before retrying a failed replay attempt
-- `startup.healthPolicy`: `"optimistic"` (the compatibility default) or `"conservative"`; conservative startup keeps ingress buffered until online evidence has been observed for transport, dedupe, and causal-order
-
-If you do not override `reservoir.databasePath`, the package now creates `./.causal-order-monitor/monitor.sqlite` automatically on the host where the monitor runs.
-
-The default `startup.healthPolicy: "optimistic"` preserves the existing startup behavior. Set `startup.healthPolicy` to `"conservative"` when the integration must wait for one online health observation from each monitored component before forwarding live ingress. This startup gate is separate from replay recovery confirmation and does not bypass restart backlog protection.
-
-By default, the monitor's internal `now()` clock is wall-clock anchored at startup and then advanced from a monotonic source so it does not move backward during the lifetime of the process. If you provide a custom `now`, you are taking responsibility for that time behavior.
-
-On a server, prefer a host-local writable path such as `/var/lib/causal-order-monitor/monitor.sqlite` or another directory your service account owns. The monitor expects SQLite to run on a normal local filesystem. Avoid read-only mounts, synced workspace folders, and network filesystems unless you have validated them for SQLite locking and durability.
-
-If the reservoir cannot start, the monitor now fails fast with a startup error that includes the resolved SQLite path and deployment guidance instead of only surfacing the raw SQLite exception.
-
-### Deep-Outage Disk I/O Sizing
-
-During a sustained `full_outage_buffer` period, accepted ingress is persisted into SQLite and peak ingress can become sustained local write pressure for hours.
-
-Plan host storage and throughput around the outage worst case, not the healthy-path average.
-
-1. Capacity floor
-
-Treat required local storage as at least:
-
-`peak accepted events/sec * average stored event bytes * 21,600 seconds`
-
-That `21,600` second window is the full `6h` hard-outage horizon.
-
-Example:
-
-- `1,000` accepted events/sec
-- `1 KB` average stored event size
-- minimum floor of about `21.6 GB`
-
-Treat that as a floor, not a full estimate. Real sizing should add headroom for SQLite metadata, indexes, journaling, filesystem slack, and recovery overlap.
-
-2. Throughput and media choice
-
-- size for peak accepted ingress writes per second across the full `4h` to `6h` outage window
-- include SQLite and filesystem overhead such as journaling, checkpoint activity, and indexed writes
-- prefer local SSD-class storage such as NVMe or provisioned SSD volumes
-- avoid NFS, SMB, synced cloud folders, or other shared/network-backed storage for the live SQLite file
-- leave headroom for prune work, replay recovery, and other host processes instead of sizing exactly to the expected steady-state ingress rate
-- assume reconnect bursts and uneven node jitter can temporarily raise write pressure above the long-run average
-
-3. Prune and expiry behavior
-
-The `6h` ceiling does not make `/monitor` immediately hard-reject new ingress just because older buffered rows have reached the maximum retention window.
-
-Instead:
-
-- routing decisions still determine whether the monitor continues to accept or buffer ingress
-- older buffered rows age out when pruning runs
-- rows that have crossed the hard cutoff are marked `dead_letter`
-- in `v0.1.1`, prune performs this work in indexed batches instead of one large sweep
-
-That means large expiry cliffs can still create predictable background write spikes. A reasonable operational target is to leave at least `20%` I/O headroom so prune and live ingress can overlap without destabilizing the host, but that is a sizing guideline, not a guarantee.
-
-Operationally, deployers should watch for:
-
-- SQLite file growth that outpaces expected backlog math
-- backlog age increasing faster than downstream recovery can drain it
-- host-level disk queueing, latency spikes, or noisy-neighbor contention
-- prune or replay phases overlapping with continued ingress during recovery
-
-If the host cannot sustain that write profile, the monitor may still preserve correctness semantics while becoming operationally fragile under deep outage pressure.
-
-You can also load deployer-facing settings from a JSON file:
-
-```ts
-import { loadMonitorConfigFile, createMonitorRuntime } from "@causal-order/monitor";
-
-const config = loadMonitorConfigFile("monitor.config.json");
-const runtime = createMonitorRuntime(config);
-```
-
-For deployments that do not want to hardcode the config path, the package also supports `CAUSAL_ORDER_MONITOR_CONFIG`:
-
-```ts
-import {
-  createMonitorRuntime,
-  loadMonitorConfigFromEnvironment,
-} from "@causal-order/monitor";
-
-const config = loadMonitorConfigFromEnvironment();
-const runtime = createMonitorRuntime(config);
-```
-
-If you want to skip the separate load step entirely, the package now exposes convenience creators for both the runtime and the transport adapter:
-
-```ts
-import {
-  createMonitorRuntimeFromEnvironment,
-  createTransportMonitorAdapterFromFile,
-} from "@causal-order/monitor";
-
-const runtime = createMonitorRuntimeFromEnvironment();
-
-const adapter = createTransportMonitorAdapterFromFile(
-  {
-    async deliverToDedupe(event, context) {
-      await sendToDedupe(event, context);
-    },
-    async deliverToOrder(event, context) {
-      await sendToCausalOrder(event, context);
-    },
-  },
-  "/etc/causal-order/monitor.config.json",
-);
-```
-
-Config precedence is:
-
-1. explicit in-code config passed to `resolveMonitorConfigFromEnvironment(inlineConfig, ...)`
-2. config file path from `CAUSAL_ORDER_MONITOR_CONFIG`
-3. default `monitor.config.json` in the current working directory, if present
-4. package defaults
-
-If `CAUSAL_ORDER_MONITOR_CONFIG` is set, the monitor treats that as authoritative and fails clearly if the file cannot be loaded.
-
-Supported duration values in JSON can be either integer milliseconds or strings like `15000ms`, `30s`, `5m`, or `4h`.
-
-If you need the package's monotonic-backed default clock factory directly, `createDefaultMonitorNow()` is also available. Most consumers do not need to call it explicitly unless they are composing lower-level runtime config.
-
-Example `monitor.config.json`:
+- `reservoir.databasePath`, `rollingBufferWindowMs`, and `fullOutageMaxWindowMs`
+- `reservoir.pruneBatchSize`, `deliveredRetentionMs`, and `deadLetterRetentionMs`
+- `reservoir.capacity.*` logical limits and optional filesystem reserve
+- `health.*.degradedAfterMs` and `health.*.offlineAfterMs`
+- `throttle.*` tier limits
+- `replay.healthConfirmationHeartbeats` and `replay.retryBackoffMs`
+- `startup.healthPolicy`: `"optimistic"` or `"conservative"`
 
 ```json
 {
@@ -432,73 +153,32 @@ Example `monitor.config.json`:
     "databasePath": "/var/lib/causal-order-monitor/monitor.sqlite",
     "rollingBufferWindowMs": "4h",
     "fullOutageMaxWindowMs": "6h",
-    "pruneIntervalMs": "60s",
-    "pruneBatchSize": 1000
-  },
-  "transport": {
-    "heartbeatGraceMs": "15s",
-    "reconnectBurstWindowMs": "30s",
-    "sourceLabel": "@causal-order/transport"
-  },
-  "health": {
-    "transport": {
-      "degradedAfterMs": "10s",
-      "offlineAfterMs": "30s"
-    },
-    "dedupe": {
-      "degradedAfterMs": "10s",
-      "offlineAfterMs": "30s"
-    },
-    "causalOrder": {
-      "degradedAfterMs": "10s",
-      "offlineAfterMs": "30s"
-    }
-  },
-  "throttle": {
-    "defaultTier": "open",
-    "open": {
-      "maxEventsPerSecond": 5000,
-      "batchSize": 500
-    },
-    "slow": {
-      "maxEventsPerSecond": 1000,
-      "batchSize": 200
-    },
-    "verySlow": {
-      "maxEventsPerSecond": 250,
-      "batchSize": 50
-    },
-    "paused": {
-      "maxEventsPerSecond": 0,
-      "batchSize": 0
-    }
+    "pruneBatchSize": 1000,
+    "deliveredRetentionMs": "24h",
+    "deadLetterRetentionMs": "168h"
   },
   "replay": {
     "healthConfirmationHeartbeats": 2,
-    "pauseLiveFlowDuringReplay": true,
     "retryBackoffMs": "5s"
-  }
+  },
+  "startup": { "healthPolicy": "conservative" }
 }
 ```
 
-## Inspection And Operator State
+See the [configuration reference](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/configuration.md) for all fields, defaults, duration parsing, precedence, bootstrap helpers, and clock behavior.
 
-For raw state, use:
+## Operational Constraints
 
-- `getSnapshot()`
-- `getReplaySnapshot()`
-- `getReservoirStats()`
-- `getReservoirLifecycleStats()` for delivered and dead-letter evidence counts
-- `checkpointReservoirWal()` for explicit WAL maintenance results
+- Give each live reservoir exactly one owning process.
+- Use host-local writable storage; network and synced filesystems are not recommended.
+- Size storage and write throughput for outage ingestion, replay overlap, pruning, SQLite metadata, indexes, and WAL activity.
+- Treat the monitor as bounded recovery infrastructure, not unlimited durable queueing.
 
-For operator-facing state, use:
+See [deployment guidance](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/deployment.md), [persistence operations](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/persistence-operations.md), and the [operator runbook](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/operator-runbook.md).
 
-- `getOperatorSnapshot()` for the stable JSON-safe v1 contract
-- `getInspectedSnapshot()`
-- `inspectMonitorSnapshotV1(snapshot, storage?)`
-- `inspectMonitorSnapshot(snapshot)`
+## Operator Snapshot
 
-The preferred machine-consumable contract is `getOperatorSnapshot()`. It is discriminated by:
+`getOperatorSnapshot()` is the preferred machine-consumable interface:
 
 ```json
 {
@@ -507,126 +187,50 @@ The preferred machine-consumable contract is `getOperatorSnapshot()`. It is disc
 }
 ```
 
-All millisecond and byte quantities in this versioned contract are decimal strings, so the complete value can be passed through `JSON.stringify()` without a BigInt replacer. It exposes stable overall status, affected components, recommended action, admission posture, backlog age, replay progress, and bounded filesystem storage facts. The older inspected snapshot remains available as a compatibility surface and continues to use BigInt values.
+Its contract is directly JSON-serializable; millisecond and byte quantities are represented as decimal strings. It exposes health, admission, backlog, replay, and bounded storage state. Consumers must check both discriminator fields before interpreting the snapshot. See the [operator snapshot migration guide](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/operator-snapshot-v1.md) for the older unversioned inspection surface.
 
-### Migrating From Unversioned Inspection
+Capacity has a separate versioned inspection surface at `monitor.capacity.getSnapshot()`. It reports configured logical/reserve limits, usage, utilization, filesystem evidence, last refusal, and bounded process counters without changing the operator snapshot v1 shape.
 
-Existing `getInspectedSnapshot()` and `inspectMonitorSnapshot()` callers remain supported throughout the v0.3.x compatibility line. Migrate when you need a version discriminator, stable operator status/action/admission semantics, or ordinary JSON serialization:
+Runtime and adapter owners also share a typed `monitor.lifecycle` facet for bounded, non-awaited operational observations. Listeners are failure-isolated, evidence is immutable and payload-free, slow observers cause inspectable `drop_oldest` overflow rather than unbounded queue growth, and `flush()` provides an explicit bounded best-effort drain before close. Lifecycle observations are not durable audit or recovery authority.
 
-```ts
-// Existing unversioned inspection: BigInt time values and compatibility fields.
-const inspected = monitor.getInspectedSnapshot();
-const pendingAgeMs: bigint = inspected.oldestPendingAgeMs;
+Version 0.5.0 emits the 20-event catalog from truthful runtime, adapter, replay, retention, health, pressure, checkpoint, and scheduler boundaries. Handler completion remains distinct from committed delivery acknowledgement, and indeterminate accepted outcomes remain storage-reconciliation cases.
 
-// Preferred operator contract: check the discriminator before interpretation.
-const operator = monitor.getOperatorSnapshot();
-if (
-  operator.schema !== "causal-order-monitor/operator-snapshot" ||
-  operator.version !== 1
-) {
-  throw new Error("Unsupported monitor operator snapshot");
-}
+## Subpath Imports
 
-const pendingAgeDecimal: string = operator.backlog.oldestAgeMs;
-const serialized = JSON.stringify(operator);
-```
+Official advanced surfaces should be imported from their published subpaths.
 
-For a previously captured raw `MonitorSnapshot`, use `inspectMonitorSnapshotV1(raw, storage)` instead of `inspectMonitorSnapshot(raw)`. The v1 projection reorganizes evidence under `admission`, `backlog`, `replay`, and `storage`; consumers should follow those public fields rather than translate internal counters or human-readable reason text. Decimal strings preserve full millisecond and byte precision. Convert one with `BigInt(value)` only when local arithmetic is required.
+| Subpath | Purpose |
+| --- | --- |
+| `@causal-order/monitor/config` | Configuration |
+| `@causal-order/monitor/health` | Health tracking |
+| `@causal-order/monitor/inspect` | Snapshot inspection |
+| `@causal-order/monitor/replay` | Replay coordination |
+| `@causal-order/monitor/routing` | Delivery routing |
+| `@causal-order/monitor/runtime` | Manual runtime integration |
+| `@causal-order/monitor/scheduler` | Reference scheduler |
+| `@causal-order/monitor/storage` | SQLite reservoir primitives |
+| `@causal-order/monitor/testing` | Harness metadata |
+| `@causal-order/monitor/throttle` | Throttle decisions |
+| `@causal-order/monitor/transport` | Preferred adapter integration |
+| `@causal-order/monitor/types` | TypeScript contracts |
 
-Filesystem pressure is classified from bounded filesystem metadata: at most 5% available is `critical`, at most 15% is `elevated`, and greater than 15% is `normal`. In-memory databases or unavailable filesystem metadata report `unknown`; no integrity check or table scan is performed.
+See [root-to-subpath migrations](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/root-subpaths.md) for compatibility history.
 
-During replay failure, an active retry deadline reports `status: "recovering"` with `recommendedAction: "wait_for_retry"`. After that deadline passes, the snapshot reports `status: "attention_required"` with `recommendedAction: "inspect_replay_failure"`; the recovery gate remains closed and admission remains accepted-buffered until replay resumes or the retained backlog is reconciled.
+## Documentation
 
-The inspected snapshot is the easiest entry point when you want a quick read on:
-
-- current operational posture
-- whether live flow is gated
-- whether replay is waiting on pre-replay confirmation, retry-waiting, actively draining, or in post-replay confirmation
-- backlog size and replay progress
-- whether operator attention is needed
-
-## Event Timing Evidence
-
-`v0.2.2` exports the type-only `MonitorEventTimingEvidence` contract for handing neutral timing facts to application-owned policy code:
-
-```ts
-import type { MonitorEventTimingEvidence } from "@causal-order/monitor/types";
-
-const monitorIngestTimeMs = event.ingestedAt;
-if (monitorIngestTimeMs === undefined) {
-  throw new Error("Monitor ingest time must be captured before producing timing evidence");
-}
-
-const observedTimeMs = BigInt(Date.now());
-const timing: MonitorEventTimingEvidence = {
-  eventTimeMs: event.clock.physicalTimeMs,
-  monitorIngestTimeMs,
-  observedTimeMs,
-  latenessMs: observedTimeMs - event.clock.physicalTimeMs,
-  causalMetadata: {
-    eventId: event.id,
-    nodeId: event.nodeId,
-  },
-};
-```
-
-The same type is also available from the package root:
-
-```ts
-import type { MonitorEventTimingEvidence } from "@causal-order/monitor";
-```
-
-`latenessMs` is signed so negative values retain clock-skew evidence instead of being silently classified. The interface introduces no runtime behavior, storage requirement, processing horizon, threshold, or policy preset.
-
-Monitor supplies a shared evidence shape; it does not decide what "too late" means. A company's development team or consultants remain responsible for accepting, flagging, quarantining, compensating, or discarding an event. Monitor's SQLite `dead_letter` state is a separate operational recovery outcome for buffered rows that exceed retention, not a business-lateness decision.
-
-## Public Types
-
-Key exported types include:
-
-- `MonitorConfig`
-- `MonitorIngressEvent`
-- `MonitorIngressDecision`
-- `MonitorEventTimingEvidence`
-- `MonitorSnapshot`
-- `ReplaySessionSnapshot`
-- `ReservoirStats`
-- `InspectedMonitorSnapshot`
-
-## Advanced And Testing Surfaces
-
-The package also publishes specialist surfaces that are supported but secondary to the main runtime and adapter path. Deprecated advanced root exports and their replacements are listed once under Root Migration Notes.
-
-Non-deprecated advanced runtime-building surface:
-
-- `SQLiteReservoir`
-
-Testing-oriented surfaces:
-
-- `monitorHarnessArtifacts`
-- `monitorHarnessScenarios`
-- harness metadata types through `@causal-order/monitor/testing`
-
-Compatibility-only metadata surfaces:
-
-- `monitorPackageVersion`
-- `monitorImplementationStatus`
-
-These remain part of the `v0.2.2` public compatibility contract and continue to follow the package's semantic-versioning guarantees.
-
-## Node Support
-
-- Node.js `>=22.13.0`
-- ESM package output
-
-## Release And Repository Documentation
-
-- [Release history](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/CHANGELOG.md)
-- [Roadmap](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/ROADMAP.md)
-- [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
+- [API reference](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/api-reference.md)
+- [Configuration reference](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/configuration.md)
+- [Deployment guide](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/deployment.md)
 - [Persistence operations](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/persistence-operations.md)
 - [Operator runbook](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/operator-runbook.md)
-- [Accepted reservoir capacity, admission, and overflow ADR](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/adr/0001-reservoir-capacity-admission-and-overflow.md)
+- [Schema compatibility](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/schema-compatibility.md)
+- [Root-to-subpath migration](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/root-subpaths.md)
+- [Operator snapshot v1 migration](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/migrations/operator-snapshot-v1.md)
+- [Timing evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/timing-evidence.md)
+- [Performance baselines](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/performance-baselines.md)
+- [Sustained-load and soak qualification](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/docs/soak-qualification.md)
+- [Validation guide and evidence](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/VALIDATION.md)
+- [Release history](https://github.com/GazaliAhmad/causal-order-monitor/blob/main/CHANGELOG.md)
 
 ## License
 

@@ -1,0 +1,159 @@
+{
+  "contractVersion": 1,
+  "sqliteSchemaVersion": 3,
+  "capacity": {
+    "configPath": "reservoir.capacity",
+    "overflowPolicy": "reject_new",
+    "defaults": {
+      "maxSerializedEventBytes": null,
+      "maxPendingRows": null,
+      "maxPendingSerializedBytes": null,
+      "filesystemReserve": null,
+      "overflowPolicy": "reject_new"
+    },
+    "filesystemReserveKeys": [
+      "minimumAvailableBytes",
+      "resumeAvailableBytes",
+      "unavailableEvidence"
+    ],
+    "filesystemUnavailableEvidencePolicies": [
+      "allow_logical_admission",
+      "refuse_admission"
+    ],
+    "refusalError": {
+      "className": "MonitorCapacityRefusedError",
+      "code": "ERR_MONITOR_CAPACITY_REFUSED",
+      "httpStatus": 503
+    },
+    "accountingError": {
+      "className": "MonitorCapacityAccountingError",
+      "code": "ERR_MONITOR_CAPACITY_ACCOUNTING"
+    },
+    "limitingDimensions": [
+      "serialized_event_bytes",
+      "pending_rows",
+      "pending_serialized_bytes",
+      "filesystem_reserve",
+      "filesystem_evidence_unavailable"
+    ],
+    "reasonCodes": [
+      "MONITOR_CAPACITY_SERIALIZED_EVENT_BYTES",
+      "MONITOR_CAPACITY_PENDING_ROWS",
+      "MONITOR_CAPACITY_PENDING_SERIALIZED_BYTES",
+      "MONITOR_CAPACITY_FILESYSTEM_RESERVE",
+      "MONITOR_CAPACITY_FILESYSTEM_EVIDENCE_UNAVAILABLE"
+    ],
+    "recommendedActions": [
+      "reduce_event_size",
+      "retry_when_capacity_available",
+      "free_local_storage_then_retry",
+      "restore_capacity_evidence_then_retry"
+    ],
+    "snapshot": {
+      "schema": "causal-order-monitor/capacity-snapshot",
+      "version": 1,
+      "keys": [
+        "schema",
+        "version",
+        "generatedAtMs",
+        "overflowPolicy",
+        "admission",
+        "limits",
+        "usage",
+        "utilization",
+        "lastRefusal",
+        "counters"
+      ],
+      "admissionKeys": ["posture", "reasonCode", "limitingDimension"],
+      "limitsKeys": [
+        "maxSerializedEventBytes",
+        "maxPendingRows",
+        "maxPendingSerializedBytes",
+        "filesystemReserve"
+      ],
+      "usageKeys": [
+        "pendingRows",
+        "pendingSerializedBytes",
+        "databaseBytes",
+        "walBytes",
+        "filesystemAvailableBytes",
+        "filesystemTotalBytes"
+      ],
+      "utilizationKeys": ["pendingRowsPercent", "pendingSerializedBytesPercent"],
+      "counterKeys": ["refusedTotal", "storageAppendFailureTotal"]
+    }
+  },
+  "schema": {
+    "perRowColumn": "serialized_event_bytes",
+    "aggregateTable": "reservoir_capacity_state",
+    "aggregateColumns": [
+      "singleton_id",
+      "pending_rows",
+      "pending_serialized_bytes"
+    ],
+    "pendingStates": ["pending", "replaying"]
+  },
+  "lifecycle": {
+    "configPath": "lifecycle",
+    "defaults": {
+      "queueCapacity": 1024,
+      "overflowPolicy": "drop_oldest",
+      "shutdownFlushTimeoutMs": "1000"
+    },
+    "snapshot": {
+      "schema": "causal-order-monitor/lifecycle-snapshot",
+      "version": 1,
+      "keys": [
+        "schema",
+        "version",
+        "generatedAtMs",
+        "status",
+        "queueDepth",
+        "queueCapacity",
+        "overflowPolicy",
+        "subscriberCount",
+        "droppedTotal",
+        "listenerFailureTotal",
+        "lastDrop"
+      ]
+    },
+    "eventEnvelope": {
+      "requiredKeys": ["type", "occurredAtMs"],
+      "forbiddenKeys": ["payload", "payloadJson", "serializedEvent"]
+    },
+    "events": [
+      "ingressAttempted",
+      "ingressAccepted",
+      "ingressRefused",
+      "storageAppendFailed",
+      "storageCheckpointCompleted",
+      "deliveryAttempted",
+      "deliveryHandlerCompleted",
+      "deliveryAcknowledged",
+      "deliveryFailed",
+      "deliveryIndeterminate",
+      "replayStateChanged",
+      "replayBatchClaimed",
+      "replayBatchAcknowledged",
+      "replayBatchFailed",
+      "retentionDeadLettered",
+      "retentionDeleted",
+      "healthChanged",
+      "storagePressureObserved",
+      "capacityPressureChanged",
+      "operationDurationObserved"
+    ]
+  },
+  "publicSurface": {
+    "runtimeFacets": ["capacity", "lifecycle"],
+    "adapterFacets": ["capacity", "lifecycle"],
+    "newPackageSubpaths": []
+  },
+  "compatibility": {
+    "operatorSnapshotSchema": "causal-order-monitor/operator-snapshot",
+    "operatorSnapshotVersion": 1,
+    "operatorSnapshotShapeUnchanged": true,
+    "v040FixturePolicy": "retained_subset",
+    "v050FixturePolicy": "exact_additions"
+  }
+}

@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.5.0
+
+- reorganized the README as a concise consumer entry point and moved detailed guidance into focused API, configuration, deployment, schema-compatibility, timing-evidence, and migration documents
+- added dedicated migration guidance for the versioned operator snapshot and preferred functional subpath imports while preserving the existing compatibility surfaces
+- clarified deployment sizing, single-owner SQLite operation, payload handling, and the distinction between storage-pressure evidence and the capacity controls delivered in v0.5.0
+- added a machine-readable v0.5.0 capacity, schema-accounting, lifecycle, and compatibility contract with an executable expected-red baseline ahead of production implementation
+- introduced SQLite schema version 3 with transactional per-row serialized-event byte evidence and singleton pending row/byte accounting across append, acknowledgement, restoration, bulk transition, and dead-letter paths
+- added fail-closed startup validation for per-row or aggregate accounting mismatches, transactional schema-v2 migration without payload rewriting, and focused migration, rollback, restart, Unicode, and mixed-transition coverage
+- added opt-in serialized-event, pending-row, and logical pending-byte limits with inclusive boundaries and atomic refusal-before-insert checks against schema-v3 accounting
+- added `MonitorCapacityRefusedError` with stable limiting dimensions, reason codes, retry guidance, JSON-safe evidence, and protective HTTP `503` semantics distinct from SQLite storage failures
+- documented strict JSON/programmatic capacity configuration, logical-versus-physical scope, zero-limit behavior, capacity release, and upstream retry responsibilities
+- added opt-in filesystem-reserve admission with separate minimum/resume thresholds, low-space hysteresis, and explicit allow-or-refuse behavior when filesystem evidence is unavailable
+- added shared versioned `capacity` facets on the reservoir, runtime, and adapter with bounded logical usage, physical storage evidence, utilization, last-refusal evidence, and process-lifetime refusal/storage-failure counters
+- preserved the exact operator snapshot v1 shape while keeping preventive reserve refusal distinct from genuine SQLite full, read-only, contention, WAL, and I/O failures
+- added a shared typed `lifecycle` facet on runtimes and adapters with a frozen 20-event payload-free model, selective subscriptions, and idempotent unsubscription
+- added bounded FIFO `drop_oldest` dispatch with non-awaited publication, concurrent per-event listeners, isolated sync/async listener failures, observable drops/failures, and explicit bounded flush
+- defined synchronous shutdown behavior that rejects new subscriptions, counts queued observations as shutdown drops, clears listener state, and preserves recovery authority exclusively in committed SQLite state
+- instrumented all 20 lifecycle facts across ingress, configured refusal, storage failure, delivery phases, replay, retention, health, capacity/storage pressure, checkpointing, scheduler work, and operation durations
+- separated handler completion from committed delivery acknowledgement and definite handler failure from accepted-but-indeterminate adapter completion without changing existing result or recovery authority
+- added SQLite-verified lifecycle timing coverage proving accepted, acknowledged, replayed, dead-lettered, deleted, and health-transition observations do not precede their authoritative mutation
+- added a correctness-gated, environment-labelled benchmark command covering healthy and saturated admission, replay drain, bounded prune, startup/restart, inspection, scheduler pacing, and lifecycle listener pressure
+- retained a five-sample v0.5.0 comparative baseline with median/p95 distributions, ignored raw output, explicit workload identity, and reviewed same-environment regression bands without claiming universal throughput
+- added eight-node smoke, medium, eight-hour accelerated-horizon, and ten-minute continuous Phase 6 qualification covering quota refusal, upstream retry ownership, scheduler-paced replay, exact-row retry deadlines, repeated recovery, observer pressure, restart overlap, final drain, and resource envelopes
+- made the reference scheduler skip replay while dedupe or causal-order is offline, avoiding predictable unavailable-target errors while health and prune cadence continue
+- stopped unchanged heartbeats and identical saturated replay snapshots from producing unbounded auxiliary history while retaining actual health transitions and replay progress
+- retained environment-specific v0.5.0 soak summaries with stable resource-window analysis, bounded shutdown/reopen evidence, SQLite integrity, and deployment sizing equations without universal throughput claims
+- made long wall-clock soak reporting compute scheduler-gap maxima iteratively so high sample counts cannot exceed the JavaScript argument-stack limit after qualification completes
+- integrated deterministic Phase 6 capacity, lifecycle, auxiliary-growth, retained-summary, and accelerated sustained-load smoke contracts into the default CI release gate
+- extended installed-artifact validation to consume new capacity/lifecycle declarations and prove quota refusal, payload-free lifecycle observation, restart-safe backlog preservation, replay through dedupe, quota release, and resumed delivery from the packed package
+- published the completed Phase 6 package as `@causal-order/monitor@0.5.0` with aligned metadata, documentation, release validation, and v0.6.0 handoff records
+
 ## v0.4.0
 
 - validated the packed monitor artifact across clean ESM TypeScript consumers and the supported causal-order stack peer matrix

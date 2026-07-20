@@ -174,3 +174,80 @@ export interface MonitorOperatorSnapshotV1 {
   };
   storage: MonitorStorageSnapshotV1;
 }
+
+export type MonitorCapacitySnapshotSchema =
+  "causal-order-monitor/capacity-snapshot";
+
+export type MonitorCapacityAdmissionPosture = "open" | "refusing" | "unknown";
+
+export type MonitorCapacityLimitingDimension =
+  | "serialized_event_bytes"
+  | "pending_rows"
+  | "pending_serialized_bytes"
+  | "filesystem_reserve"
+  | "filesystem_evidence_unavailable";
+
+export type MonitorCapacityReasonCode =
+  | "MONITOR_CAPACITY_SERIALIZED_EVENT_BYTES"
+  | "MONITOR_CAPACITY_PENDING_ROWS"
+  | "MONITOR_CAPACITY_PENDING_SERIALIZED_BYTES"
+  | "MONITOR_CAPACITY_FILESYSTEM_RESERVE"
+  | "MONITOR_CAPACITY_FILESYSTEM_EVIDENCE_UNAVAILABLE";
+
+export interface MonitorCapacityLastRefusalV1 {
+  occurredAtMs: string;
+  limitingDimension: MonitorCapacityLimitingDimension;
+  reasonCode: MonitorCapacityReasonCode;
+  limit: string;
+  current: string;
+  attempted: string;
+  retryable: boolean;
+  recommendedAction:
+    | "reduce_event_size"
+    | "retry_when_capacity_available"
+    | "free_local_storage_then_retry"
+    | "restore_capacity_evidence_then_retry";
+}
+
+export interface MonitorCapacitySnapshotV1 {
+  schema: MonitorCapacitySnapshotSchema;
+  version: 1;
+  generatedAtMs: string;
+  overflowPolicy: "reject_new";
+  admission: {
+    posture: MonitorCapacityAdmissionPosture;
+    reasonCode: MonitorCapacityReasonCode | null;
+    limitingDimension: MonitorCapacityLimitingDimension | null;
+  };
+  limits: {
+    maxSerializedEventBytes: string | null;
+    maxPendingRows: number | null;
+    maxPendingSerializedBytes: string | null;
+    filesystemReserve: {
+      minimumAvailableBytes: string;
+      resumeAvailableBytes: string;
+      unavailableEvidence: "allow_logical_admission" | "refuse_admission";
+    } | null;
+  };
+  usage: {
+    pendingRows: number;
+    pendingSerializedBytes: string;
+    databaseBytes: string | null;
+    walBytes: string | null;
+    filesystemAvailableBytes: string | null;
+    filesystemTotalBytes: string | null;
+  };
+  utilization: {
+    pendingRowsPercent: number | null;
+    pendingSerializedBytesPercent: number | null;
+  };
+  lastRefusal: MonitorCapacityLastRefusalV1 | null;
+  counters: {
+    refusedTotal: number;
+    storageAppendFailureTotal: number;
+  };
+}
+
+export interface MonitorCapacityFacet {
+  getSnapshot(): MonitorCapacitySnapshotV1;
+}

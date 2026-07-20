@@ -26,7 +26,7 @@ The monitor does not hide SQLite storage failures or convert a rejected write in
 
 `getOperatorSnapshot().storage` uses bounded file and filesystem metadata reads. It does not run `PRAGMA integrity_check` or scan ingress rows. Available capacity of 5% or less is classified `critical`; 15% or less is `elevated`; more is `normal`. In-memory databases and unavailable metadata report `unknown`. These levels are package operational signals, not substitutes for deployment-specific volume alerts.
 
-This is the current `v0.4.0` contract; it does not enforce a row, logical-byte, or filesystem-reserve admission quota. Future `v0.5.0` capacity work is governed by [ADR 0001](adr/0001-reservoir-capacity-admission-and-overflow.md), which keeps logical quotas distinct from physical database/WAL observations and host-level disk monitoring.
+The current contract can enforce opt-in maximum serialized-event bytes, pending rows, logical pending serialized bytes, and an advisory filesystem reserve. Logical checks use schema-v3 transactional accounting and refuse before persistence. The reserve samples available filesystem bytes and uses separate refuse/resume thresholds to prevent flapping; it does not bound physical database/WAL size, terminal evidence, health/replay history, or filesystem growth transactionally. `capacity.getSnapshot()` keeps these logical and physical facts separate. See [ADR 0001](adr/0001-reservoir-capacity-admission-and-overflow.md).
 
 ### Live reservoir ownership
 
@@ -62,11 +62,13 @@ Ingress events are stored as JSON with monitor-managed BigInt encoding. Ordinary
 
 Standard JSON transformations still apply: undefined object properties, functions, and symbols are omitted; undefined array entries become null; and non-finite numbers become null. Cyclic values and values too deeply nested for JSON serialization are rejected before the reservoir records acceptance.
 
-Repository validation covers representative payload bodies of 1 KiB, 64 KiB, and 1 MiB. These are compatibility examples, not a universal maximum or throughput guarantee. Set an application-owned payload limit based on outage duration, ingress rate, storage capacity, replay rate, and measured deployment behavior.
+Repository validation covers representative payload bodies of 1 KiB, 64 KiB, and 1 MiB. These are compatibility examples, not a universal maximum or throughput guarantee. Configure `reservoir.capacity.maxSerializedEventBytes` and the pending limits from outage duration, ingress rate, storage capacity, replay rate, and measured deployment behavior; retain application or gateway limits where policy differs from the monitor's durability boundary.
 
 Payloads are stored in the primary SQLite database and may also appear in WAL pages and backups. The monitor does not encrypt or redact application payloads. Applications and operators remain responsible for excluding secrets that should not be persisted and for applying appropriate filesystem, backup, and volume encryption controls.
 
 ## Shutdown lifecycle
+
+Lifecycle observers are best effort and are not part of SQLite recovery authority. If queued observations should receive a bounded delivery attempt, call `await runtime.lifecycle.flush()` or `await adapter.lifecycle.flush()` before the synchronous owner close. Close itself does not await active listeners; it discards queued observations as inspectable shutdown drops and clears subscriptions. Accepted reservoir rows remain governed by SQLite commit and restart recovery regardless of observer delivery, failure, or loss.
 
 `SQLiteReservoir.close()`, `MonitorRuntime.close()`, and `TransportMonitorAdapter.close()` are idempotent. Repeated close calls are safe and do not reopen or re-checkpoint a closed database.
 
@@ -104,10 +106,12 @@ Opening a supported older schema runs its migration transactionally. Opening a n
 
 On migration failure, leave the database files in place and stop restart loops. Preserve a full copy before correcting the reported filesystem, schema, or conflicting-object condition. Reopen with the same or newer package after correction; migrations are transactional and retryable.
 
-The package does not provide downgrade migrations. Rolling application code back after schema version 2 is created requires a release that supports schema version 2. Restore a verified pre-upgrade backup only if discarding all events accepted after that backup is operationally acceptable.
+The package does not provide downgrade migrations. Rolling application code back after schema version 3 is created requires a release that supports schema version 3. Restore a verified pre-upgrade backup only if discarding all events accepted after that backup is operationally acceptable.
 
 ## Growth and compaction
 
 Retention deletes logical rows but SQLite may retain pages for reuse, so physical file size need not fall immediately. Track row counts, database size, WAL size, and checkpoint results over representative ingest/prune cycles in the deployment environment.
+
+`component_health_log` records actual health updates/transitions, not every unchanged scheduler heartbeat. Unchanged heartbeats still refresh in-memory freshness. `replay_sessions` records changed replay snapshots and progress; identical snapshots after recovery confirmation saturates are not appended repeatedly. Actual transition and replay history remains retained, so operators should include those auxiliary rows in storage measurements even though they are outside pending logical-byte capacity.
 
 `VACUUM` is a maintenance-only operation. Run it only against a stopped, backed-up database with sufficient free disk space; it is intentionally not part of the live monitor path.

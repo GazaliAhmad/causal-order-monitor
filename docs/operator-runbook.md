@@ -34,6 +34,15 @@ The corresponding recommended action is `relieve_protective_pressure`.
 3. Correct the affected component, backlog pressure, or protective throttle condition.
 4. Retry only after admission reopens.
 
+Configured reservoir capacity refusal is a separate protective `503` boundary. It throws `MonitorCapacityRefusedError` with code `ERR_MONITOR_CAPACITY_REFUSED`; inspect `limitingDimension`, `reasonCode`, `limit`, `current`, `attempted`, and `recommendedAction`. No row identity is assigned and no ingress row is persisted.
+
+- For `serialized_event_bytes`, reduce the complete serialized event envelope before retrying; this refusal is not retryable as-is.
+- For `pending_rows` or `pending_serialized_bytes`, retain source ownership and retry after acknowledgement, replay, or dead-letter transition releases logical quota.
+- For `filesystem_reserve`, free or expand the same host-local filesystem and wait for the configured resume threshold.
+- For `filesystem_evidence_unavailable`, restore readable filesystem evidence under the configured conservative policy.
+
+Use `capacity.getSnapshot()` to distinguish logical pending usage from database/WAL size and advisory filesystem evidence. Do not delete accepted rows or a live WAL file to create space, and do not treat preventive reserve refusal as proof that actual SQLite full or I/O failure cannot occur.
+
 ## Retry waiting
 
 `status: "recovering"` with `recommendedAction: "wait_for_retry"` means replay is in a persisted backoff window.

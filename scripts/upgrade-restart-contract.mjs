@@ -55,8 +55,8 @@ try {
     reservoir: { databasePath },
   });
   assert.deepEqual(runtime.getSchemaInfo(), {
-    currentVersion: 2,
-    latestSupportedVersion: 2,
+    currentVersion: 3,
+    latestSupportedVersion: 3,
     migratedFromLegacy: true,
   });
   assert.equal(runtime.getReplaySnapshot().state, "queued");
@@ -78,7 +78,7 @@ try {
     now: () => 10_001n,
     reservoir: { databasePath },
   });
-  assert.equal(reopened.getSchemaInfo().currentVersion, 2);
+  assert.equal(reopened.getSchemaInfo().currentVersion, 3);
   assert.equal(reopened.getSchemaInfo().migratedFromLegacy, false);
   assert.equal(reopened.getReplaySnapshot().state, "queued");
   assert.equal(reopened.getReservoirStats().totalPendingRows, 2);

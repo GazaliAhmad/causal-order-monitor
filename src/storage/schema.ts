@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
-export const MONITOR_SQLITE_SCHEMA_VERSION = 2;
+export const MONITOR_SQLITE_SCHEMA_VERSION = 3;
 
 export interface MonitorSchemaInfo {
   currentVersion: number;
@@ -98,6 +98,19 @@ export class MonitorSchemaMigrationError extends MonitorSchemaError {
   }
 }
 
+export class MonitorCapacityAccountingError extends Error {
+  readonly code = "ERR_MONITOR_CAPACITY_ACCOUNTING" as const;
+  readonly databasePath: string;
+
+  constructor(databasePath: string, reason: string) {
+    super(
+      `Monitor capacity accounting at "${normalizeDatabasePath(databasePath)}" is invalid. ${reason}`,
+    );
+    this.name = "MonitorCapacityAccountingError";
+    this.databasePath = normalizeDatabasePath(databasePath);
+  }
+}
+
 export const MONITOR_SQLITE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS ingress_events (
   monitor_ingest_seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +124,7 @@ CREATE TABLE IF NOT EXISTS ingress_events (
   sequence TEXT,
   logical_time_ms INTEGER NOT NULL,
   payload_json TEXT NOT NULL,
+  serialized_event_bytes INTEGER NOT NULL CHECK (serialized_event_bytes >= 0),
   payload_encoding TEXT NOT NULL DEFAULT 'json',
   delivery_mode TEXT NOT NULL,
   replay_state TEXT NOT NULL,
@@ -144,6 +158,12 @@ CREATE INDEX IF NOT EXISTS idx_ingress_events_terminal_retention
 
 CREATE INDEX IF NOT EXISTS idx_ingress_events_source_path
   ON ingress_events(source_path);
+
+CREATE TABLE IF NOT EXISTS reservoir_capacity_state (
+  singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+  pending_rows INTEGER NOT NULL CHECK (pending_rows >= 0),
+  pending_serialized_bytes INTEGER NOT NULL CHECK (pending_serialized_bytes >= 0)
+);
 
 CREATE TABLE IF NOT EXISTS component_health_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,6 +219,7 @@ const REQUIRED_COLUMNS = {
     "sequence",
     "logical_time_ms",
     "payload_json",
+    "serialized_event_bytes",
     "payload_encoding",
     "delivery_mode",
     "replay_state",
@@ -236,12 +257,18 @@ const REQUIRED_COLUMNS = {
     "error_count",
     "details_json",
   ],
+  reservoir_capacity_state: [
+    "singleton_id",
+    "pending_rows",
+    "pending_serialized_bytes",
+  ],
 } as const;
 
 const LEGACY_OPTIONAL_INGRESS_COLUMNS = new Set([
   "retry_not_before_ms",
   "replay_claimed_at_ms",
   "terminal_at_ms",
+  "serialized_event_bytes",
 ]);
 
 const MONITOR_SCHEMA_MIGRATIONS: ReadonlyArray<MonitorSchemaMigration> = [
@@ -275,6 +302,43 @@ const MONITOR_SCHEMA_MIGRATIONS: ReadonlyArray<MonitorSchemaMigration> = [
         WHERE replay_state IN ('delivered', 'dead_letter')
           AND terminal_at_ms IS NULL`);
       db.exec(MONITOR_SQLITE_SCHEMA);
+    },
+  },
+  {
+    fromVersion: 2,
+    toVersion: 3,
+    apply(db) {
+      const ingressColumns = getColumnNames(db, "ingress_events");
+      if (!ingressColumns.has("serialized_event_bytes")) {
+        db.exec(
+          `ALTER TABLE ingress_events
+             ADD COLUMN serialized_event_bytes INTEGER NOT NULL DEFAULT 0
+             CHECK (serialized_event_bytes >= 0)`,
+        );
+      }
+      db.exec(`UPDATE ingress_events
+        SET serialized_event_bytes = length(CAST(payload_json AS BLOB))`);
+      db.exec(`CREATE TABLE IF NOT EXISTS reservoir_capacity_state (
+        singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+        pending_rows INTEGER NOT NULL CHECK (pending_rows >= 0),
+        pending_serialized_bytes INTEGER NOT NULL CHECK (pending_serialized_bytes >= 0)
+      )`);
+      db.exec(`INSERT INTO reservoir_capacity_state (
+          singleton_id,
+          pending_rows,
+          pending_serialized_bytes
+        ) VALUES (
+          1,
+          (SELECT COUNT(*)
+             FROM ingress_events
+            WHERE replay_state IN ('pending', 'replaying')),
+          (SELECT COALESCE(SUM(serialized_event_bytes), 0)
+             FROM ingress_events
+            WHERE replay_state IN ('pending', 'replaying'))
+        )
+        ON CONFLICT(singleton_id) DO UPDATE SET
+          pending_rows = excluded.pending_rows,
+          pending_serialized_bytes = excluded.pending_serialized_bytes`);
     },
   },
 ];
@@ -342,7 +406,9 @@ function validateSchemaStructure(
 ): void {
   const tableNames = getUserTableNames(db);
   const missingTables = Object.keys(REQUIRED_COLUMNS).filter(
-    (tableName) => !tableNames.has(tableName),
+    (tableName) =>
+      !tableNames.has(tableName) &&
+      !(allowLegacyIngressColumns && tableName === "reservoir_capacity_state"),
   );
   if (missingTables.length > 0) {
     throw new MonitorSchemaCompatibilityError(
@@ -353,6 +419,13 @@ function validateSchemaStructure(
   }
 
   for (const [tableName, requiredColumns] of Object.entries(REQUIRED_COLUMNS)) {
+    if (
+      allowLegacyIngressColumns &&
+      tableName === "reservoir_capacity_state" &&
+      !tableNames.has(tableName)
+    ) {
+      continue;
+    }
     const columnNames = getColumnNames(db, tableName);
     const missingColumns = requiredColumns.filter((columnName) => {
       if (
@@ -392,7 +465,108 @@ function withSchemaTransaction<T>(db: DatabaseSync, operation: () => T): T {
 
 function createCurrentSchema(db: DatabaseSync): void {
   db.exec(MONITOR_SQLITE_SCHEMA);
+  db.exec(`INSERT INTO reservoir_capacity_state (
+    singleton_id,
+    pending_rows,
+    pending_serialized_bytes
+  ) VALUES (1, 0, 0)`);
   setSchemaVersion(db, MONITOR_SQLITE_SCHEMA_VERSION);
+}
+
+function parseSqlBigInt(
+  value: unknown,
+  field: string,
+  databasePath: string,
+): bigint {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  throw new MonitorCapacityAccountingError(
+    databasePath,
+    `Field '${field}' is not a valid SQLite integer.`,
+  );
+}
+
+function validateCapacityAccounting(db: DatabaseSync, databasePath: string): void {
+  const invalidRowStatement = db.prepare(
+    `SELECT rowid AS row_id,
+            serialized_event_bytes,
+            length(CAST(payload_json AS BLOB)) AS measured_bytes
+       FROM ingress_events
+      WHERE serialized_event_bytes < 0
+         OR serialized_event_bytes != length(CAST(payload_json AS BLOB))
+      LIMIT 1`,
+  );
+  invalidRowStatement.setReadBigInts(true);
+  const invalidRow = invalidRowStatement.get() as
+    | { row_id?: unknown; serialized_event_bytes?: unknown; measured_bytes?: unknown }
+    | undefined;
+  if (invalidRow) {
+    throw new MonitorCapacityAccountingError(
+      databasePath,
+      `Ingress row ${String(invalidRow.row_id)} records ${String(invalidRow.serialized_event_bytes)} ` +
+        `serialized bytes but its stored envelope measures ${String(invalidRow.measured_bytes)} bytes.`,
+    );
+  }
+
+  const stateStatement = db.prepare(
+    `SELECT singleton_id, pending_rows, pending_serialized_bytes
+       FROM reservoir_capacity_state`,
+  );
+  stateStatement.setReadBigInts(true);
+  const stateRows = stateStatement.all() as Array<{
+    singleton_id?: unknown;
+    pending_rows?: unknown;
+    pending_serialized_bytes?: unknown;
+  }>;
+  if (
+    stateRows.length !== 1 ||
+    parseSqlBigInt(stateRows[0]?.singleton_id, "singleton_id", databasePath) !== 1n
+  ) {
+    throw new MonitorCapacityAccountingError(
+      databasePath,
+      "The reservoir_capacity_state table must contain exactly the singleton row with id 1.",
+    );
+  }
+
+  const authoritativeStatement = db.prepare(
+    `SELECT COUNT(*) AS pending_rows,
+            COALESCE(SUM(serialized_event_bytes), 0) AS pending_serialized_bytes
+       FROM ingress_events
+      WHERE replay_state IN ('pending', 'replaying')`,
+  );
+  authoritativeStatement.setReadBigInts(true);
+  const authoritative = authoritativeStatement.get() as {
+    pending_rows?: unknown;
+    pending_serialized_bytes?: unknown;
+  };
+  const persistedRows = parseSqlBigInt(
+    stateRows[0]?.pending_rows,
+    "pending_rows",
+    databasePath,
+  );
+  const persistedBytes = parseSqlBigInt(
+    stateRows[0]?.pending_serialized_bytes,
+    "pending_serialized_bytes",
+    databasePath,
+  );
+  const authoritativeRows = parseSqlBigInt(
+    authoritative.pending_rows,
+    "pending_rows",
+    databasePath,
+  );
+  const authoritativeBytes = parseSqlBigInt(
+    authoritative.pending_serialized_bytes,
+    "pending_serialized_bytes",
+    databasePath,
+  );
+  if (persistedRows !== authoritativeRows || persistedBytes !== authoritativeBytes) {
+    throw new MonitorCapacityAccountingError(
+      databasePath,
+      `Persisted pending usage is ${persistedRows} rows/${persistedBytes} bytes; ` +
+        `authoritative row state is ${authoritativeRows} rows/${authoritativeBytes} bytes.`,
+    );
+  }
 }
 
 function migrateLegacySchema(db: DatabaseSync, databasePath: string): void {
@@ -481,6 +655,7 @@ export function applyMonitorSchema(
       MONITOR_SQLITE_SCHEMA_VERSION,
       false,
     );
+    validateCapacityAccounting(db, databasePath);
     return {
       currentVersion: MONITOR_SQLITE_SCHEMA_VERSION,
       latestSupportedVersion: MONITOR_SQLITE_SCHEMA_VERSION,
@@ -489,6 +664,7 @@ export function applyMonitorSchema(
   }
 
   validateSchemaStructure(db, databasePath, detectedVersion, false);
+  validateCapacityAccounting(db, databasePath);
   db.exec(MONITOR_SQLITE_SCHEMA);
   return {
     currentVersion: detectedVersion,

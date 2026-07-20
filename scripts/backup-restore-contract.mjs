@@ -27,18 +27,18 @@ try {
   mkdirSync(dirname(backupPath), { recursive: true });
   copyFileSync(sourcePath, backupPath);
   const restored = new SQLiteReservoir(config(backupPath), () => 1_000n);
-  assert.equal(restored.getSchemaInfo().currentVersion, 2);
+  assert.equal(restored.getSchemaInfo().currentVersion, 3);
   assert.equal(restored.getStats().totalPendingRows, 1);
   restored.close();
 
   mkdirSync(dirname(relocatedPath), { recursive: true });
   renameSync(backupPath, relocatedPath);
   const relocated = new SQLiteReservoir(config(relocatedPath), () => 1_000n);
-  assert.equal(relocated.getSchemaInfo().currentVersion, 2);
+  assert.equal(relocated.getSchemaInfo().currentVersion, 3);
   assert.equal(relocated.getStats().totalPendingRows, 1);
   relocated.close();
 } finally {
   rmSync(workspace, { recursive: true, force: true });
 }
 
-console.log("backup/restore contract passed: stopped checkpointed copies and relocation preserve schema v2 and accepted rows");
+console.log("backup/restore contract passed: stopped checkpointed copies and relocation preserve schema v3 and accepted rows");

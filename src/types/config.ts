@@ -18,6 +18,27 @@ export interface MonitorReservoirConfig {
   deliveredRetentionMs?: bigint;
   deadLetterRetentionMs?: bigint;
   walAutoCheckpointPages?: number;
+  capacity?: MonitorCapacityConfig;
+}
+
+export type MonitorCapacityOverflowPolicy = "reject_new";
+
+export type MonitorFilesystemUnavailableEvidencePolicy =
+  | "allow_logical_admission"
+  | "refuse_admission";
+
+export interface MonitorFilesystemReserveConfig {
+  minimumAvailableBytes: bigint;
+  resumeAvailableBytes: bigint;
+  unavailableEvidence: MonitorFilesystemUnavailableEvidencePolicy;
+}
+
+export interface MonitorCapacityConfig {
+  maxSerializedEventBytes: bigint | null;
+  maxPendingRows: number | null;
+  maxPendingSerializedBytes: bigint | null;
+  filesystemReserve: MonitorFilesystemReserveConfig | null;
+  overflowPolicy: MonitorCapacityOverflowPolicy;
 }
 
 export interface MonitorTransportConfig {
@@ -62,6 +83,14 @@ export interface MonitorStartupConfig {
   healthPolicy: MonitorStartupHealthPolicy;
 }
 
+export type MonitorLifecycleOverflowPolicy = "drop_oldest";
+
+export interface MonitorLifecycleConfig {
+  queueCapacity: number;
+  overflowPolicy: MonitorLifecycleOverflowPolicy;
+  shutdownFlushTimeoutMs: bigint;
+}
+
 export interface MonitorConfig {
   reservoir: MonitorReservoirConfig;
   transport: MonitorTransportConfig;
@@ -69,6 +98,7 @@ export interface MonitorConfig {
   throttle: MonitorThrottleConfig;
   replay: MonitorReplayConfig;
   startup: MonitorStartupConfig;
+  lifecycle: MonitorLifecycleConfig;
   now?: () => bigint;
 }
 
@@ -100,6 +130,23 @@ export interface MonitorJsonReservoirConfig {
   deliveredRetentionMs?: MonitorJsonDuration;
   deadLetterRetentionMs?: MonitorJsonDuration;
   walAutoCheckpointPages?: number;
+  capacity?: MonitorJsonCapacityConfig;
+}
+
+export type MonitorJsonByteLimit = number | string | null;
+
+export interface MonitorJsonCapacityConfig {
+  maxSerializedEventBytes?: MonitorJsonByteLimit;
+  maxPendingRows?: number | null;
+  maxPendingSerializedBytes?: MonitorJsonByteLimit;
+  filesystemReserve?: MonitorJsonFilesystemReserveConfig | null;
+  overflowPolicy?: MonitorCapacityOverflowPolicy;
+}
+
+export interface MonitorJsonFilesystemReserveConfig {
+  minimumAvailableBytes: MonitorJsonByteLimit;
+  resumeAvailableBytes: MonitorJsonByteLimit;
+  unavailableEvidence: MonitorFilesystemUnavailableEvidencePolicy;
 }
 
 export interface MonitorJsonTransportConfig {
@@ -142,6 +189,12 @@ export interface MonitorJsonStartupConfig {
   healthPolicy?: MonitorStartupHealthPolicy;
 }
 
+export interface MonitorJsonLifecycleConfig {
+  queueCapacity?: number;
+  overflowPolicy?: MonitorLifecycleOverflowPolicy;
+  shutdownFlushTimeoutMs?: MonitorJsonDuration;
+}
+
 export interface MonitorJsonConfig {
   reservoir?: MonitorJsonReservoirConfig;
   transport?: MonitorJsonTransportConfig;
@@ -149,6 +202,7 @@ export interface MonitorJsonConfig {
   throttle?: MonitorJsonThrottleConfig;
   replay?: MonitorJsonReplayConfig;
   startup?: MonitorJsonStartupConfig;
+  lifecycle?: MonitorJsonLifecycleConfig;
 }
 
 export function createDefaultMonitorConfig(): MonitorConfig {
@@ -162,6 +216,13 @@ export function createDefaultMonitorConfig(): MonitorConfig {
       deliveredRetentionMs: 24n * 60n * 60n * 1000n,
       deadLetterRetentionMs: 7n * 24n * 60n * 60n * 1000n,
       walAutoCheckpointPages: 1_000,
+      capacity: {
+        maxSerializedEventBytes: null,
+        maxPendingRows: null,
+        maxPendingSerializedBytes: null,
+        filesystemReserve: null,
+        overflowPolicy: "reject_new",
+      },
     },
     transport: {
       heartbeatGraceMs: 15_000n,
@@ -208,6 +269,11 @@ export function createDefaultMonitorConfig(): MonitorConfig {
     },
     startup: {
       healthPolicy: "optimistic",
+    },
+    lifecycle: {
+      queueCapacity: 1_024,
+      overflowPolicy: "drop_oldest",
+      shutdownFlushTimeoutMs: 1_000n,
     },
     now: createDefaultMonitorNow(),
   };

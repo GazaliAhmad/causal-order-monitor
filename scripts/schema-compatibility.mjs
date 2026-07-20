@@ -120,7 +120,7 @@ function createLegacyDatabase(databasePath, { conflict = false } = {}) {
 }
 
 try {
-  assert.equal(MONITOR_SQLITE_SCHEMA_VERSION, 2);
+  assert.equal(MONITOR_SQLITE_SCHEMA_VERSION, 3);
 
   const newDatabasePath = join(workspace, "new.sqlite");
   const newReservoir = new SQLiteReservoir(
@@ -128,12 +128,12 @@ try {
     () => 1_000n,
   );
   assert.deepEqual(newReservoir.getSchemaInfo(), {
-    currentVersion: 2,
-    latestSupportedVersion: 2,
+    currentVersion: 3,
+    latestSupportedVersion: 3,
     migratedFromLegacy: false,
   });
   newReservoir.close();
-  assert.equal(readUserVersion(newDatabasePath), 2);
+  assert.equal(readUserVersion(newDatabasePath), 3);
   assert.deepEqual(readJournalSettings(newDatabasePath), {
     journalMode: "wal",
     synchronous: 2,
@@ -144,8 +144,8 @@ try {
     reservoir: { databasePath: runtimeDatabasePath },
   });
   assert.deepEqual(runtime.getSchemaInfo(), {
-    currentVersion: 2,
-    latestSupportedVersion: 2,
+    currentVersion: 3,
+    latestSupportedVersion: 3,
     migratedFromLegacy: false,
   });
   runtime.close();
@@ -157,8 +157,8 @@ try {
     () => 1_000n,
   );
   assert.deepEqual(legacyReservoir.getSchemaInfo(), {
-    currentVersion: 2,
-    latestSupportedVersion: 2,
+    currentVersion: 3,
+    latestSupportedVersion: 3,
     migratedFromLegacy: true,
   });
   assert.equal(legacyReservoir.getStats().totalPendingRows, 1);
@@ -168,10 +168,11 @@ try {
   assert.equal(legacyReservoir.resetReplayBatchToPending([1]), 1);
   assert.equal(legacyReservoir.getPendingRowCount(), 1);
   legacyReservoir.close();
-  assert.equal(readUserVersion(legacyDatabasePath), 2);
+  assert.equal(readUserVersion(legacyDatabasePath), 3);
   assert.ok(readColumnNames(legacyDatabasePath, "ingress_events").includes("retry_not_before_ms"));
   assert.ok(readColumnNames(legacyDatabasePath, "ingress_events").includes("replay_claimed_at_ms"));
   assert.ok(readColumnNames(legacyDatabasePath, "ingress_events").includes("terminal_at_ms"));
+  assert.ok(readColumnNames(legacyDatabasePath, "ingress_events").includes("serialized_event_bytes"));
 
   const reopenedLegacy = new SQLiteReservoir(
     createConfig(legacyDatabasePath),
@@ -196,7 +197,7 @@ try {
   assert.equal(unversionedCurrent.getSchemaInfo().migratedFromLegacy, true);
   assert.equal(unversionedCurrent.getStats().totalPendingRows, 1);
   unversionedCurrent.close();
-  assert.equal(readUserVersion(unversionedCurrentPath), 2);
+  assert.equal(readUserVersion(unversionedCurrentPath), 3);
 
   const versionOnePath = join(workspace, "version-one.sqlite");
   createLegacyDatabase(versionOnePath);
@@ -213,12 +214,12 @@ try {
     () => 2_000n,
   );
   assert.deepEqual(versionOneReservoir.getSchemaInfo(), {
-    currentVersion: 2,
-    latestSupportedVersion: 2,
+    currentVersion: 3,
+    latestSupportedVersion: 3,
     migratedFromLegacy: false,
   });
   versionOneReservoir.close();
-  assert.equal(readUserVersion(versionOnePath), 2);
+  assert.equal(readUserVersion(versionOnePath), 3);
   assert.equal(Number(readTerminalAt(versionOnePath)), 1_000);
 
   const newerDatabasePath = join(workspace, "newer.sqlite");
@@ -297,10 +298,10 @@ try {
     createConfig(rollbackDatabasePath),
     () => 0n,
   );
-  assert.equal(retriedMigration.getSchemaInfo().currentVersion, 2);
+  assert.equal(retriedMigration.getSchemaInfo().currentVersion, 3);
   assert.equal(retriedMigration.getStats().totalPendingRows, 1);
   retriedMigration.close();
-  assert.equal(readUserVersion(rollbackDatabasePath), 2);
+  assert.equal(readUserVersion(rollbackDatabasePath), 3);
 
   console.log(
     "schema compatibility passed: new databases are versioned, legacy rows migrate transactionally, current schemas reopen idempotently, newer/incompatible schemas do not mutate data, and rolled-back migrations can be retried",

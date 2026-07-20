@@ -1,0 +1,420 @@
+{
+  "schema": "causal-order-monitor/phase6-soak-validation",
+  "version": 1,
+  "status": "passed",
+  "generatedAt": "2026-07-19T15:05:02.964Z",
+  "scope": "accelerated long-horizon qualification; not a claim of continuous wall-clock duration",
+  "artifact": {
+    "kind": "working-tree TypeScript build",
+    "package": "@causal-order/monitor",
+    "packageVersion": "0.4.0",
+    "gitCommit": "060b248198870f8a72ed3619848db825ee71c46d",
+    "workingTree": "cumulative uncommitted v0.5.0 release-candidate changes"
+  },
+  "environment": {
+    "label": "win32-10.0.26200-x64-node24.15.0",
+    "node": "v24.15.0",
+    "npm": "11.17.0",
+    "nodeSqlite": "3.51.3",
+    "os": {
+      "platform": "win32",
+      "release": "10.0.26200",
+      "architecture": "x64"
+    },
+    "cpu": {
+      "model": "12th Gen Intel(R) Core(TM) i7-1255U",
+      "logicalCores": 12
+    },
+    "memoryBytes": {
+      "total": "16858529792",
+      "freeAtReport": "1893605376"
+    },
+    "filesystem": {
+      "blockSizeBytes": "4096",
+      "totalBytes": "510392602624",
+      "availableBytesAtReport": "130724581376"
+    },
+    "dependencies": {
+      "declaredPeers": {
+        "@causal-order/dedupe": "^1.1.1",
+        "@causal-order/transport": "^0.1.2",
+        "causal-order": "^1.0.0"
+      },
+      "installed": {
+        "typescript": "6.0.3",
+        "@types/node": "25.9.4",
+        "@causal-order/dedupe": "1.1.1",
+        "@causal-order/transport": "0.1.2",
+        "causal-order": "1.0.0"
+      }
+    }
+  },
+  "configuration": {
+    "profile": "smoke",
+    "duration": "20m",
+    "simulatedDurationMs": 1200000,
+    "timeScale": 120,
+    "eventsPerSecond": 2,
+    "duplicateRate": 0.01,
+    "seed": 500009,
+    "nodeIds": [
+      "edge-a",
+      "edge-b",
+      "edge-c",
+      "edge-d",
+      "edge-e",
+      "edge-f",
+      "edge-g",
+      "edge-h"
+    ],
+    "databasePlacement": "C:\\dev\\causal-order-monitor\\artifacts\\soak\\monitor-phase6-smoke.sqlite",
+    "capacityRows": 96,
+    "maxPendingSerializedBytes": "393216",
+    "lifecycleQueue": 16,
+    "replayBatchSize": 16,
+    "retryBackoffMs": "1000",
+    "schedulerIntervalMs": 25,
+    "sampleIntervalWallMs": 250,
+    "limits": {
+      "maxRssMb": 512,
+      "maxWalMb": 64,
+      "maxStableHeapGrowthMb": 64
+    }
+  },
+  "timing": {
+    "startedAt": "2026-07-19T15:04:51.560Z",
+    "wallElapsedMs": 11408,
+    "simulatedElapsedMs": 1364880,
+    "drainWallMs": 1374,
+    "finalShutdownDurationMs": 8.049699999999575,
+    "finalReopenDurationMs": 22.19800000000032
+  },
+  "counters": {
+    "generatedEmissions": 2395,
+    "generatedUniqueEvents": 2370,
+    "generatedDuplicateEmissions": 25,
+    "acceptedByMonitor": 2395,
+    "capacityRefusalAttempts": 2103,
+    "admissionRefusalAttempts": 0,
+    "upstreamQueued": 2103,
+    "upstreamRetryAttempts": 2103,
+    "replayDeliveriesThroughDedupe": 2231,
+    "replayInjectedFailures": 1,
+    "retryWaitObserved": 1,
+    "orderDeliveries": 2370,
+    "orderUniqueEvents": 2370,
+    "orderDuplicateDeliveries": 0,
+    "orderSequenceRegressions": 0,
+    "dedupeDroppedDuplicates": 25,
+    "checkpoints": 5,
+    "restarts": 1,
+    "shutdowns": 2
+  },
+  "maxima": {
+    "pendingRows": 96,
+    "pendingSerializedBytes": 43296,
+    "upstreamQueue": 711,
+    "rssBytes": 66101248,
+    "heapUsedBytes": 12990056,
+    "databaseBytes": 2166784,
+    "walBytes": 4161232,
+    "activeHandles": 2,
+    "lifecycleQueueDepth": 16,
+    "lifecycleDroppedTotal": 14963,
+    "lifecycleListenerFailureTotal": 26
+  },
+  "phaseEvidence": {
+    "healthy": {
+      "entered": true,
+      "generated": 164,
+      "accepted": 164,
+      "refusalAttempts": 0,
+      "maximumPendingRows": 0,
+      "maximumUpstreamQueue": 0
+    },
+    "extended_order_outage": {
+      "entered": true,
+      "generated": 410,
+      "accepted": 96,
+      "refusalAttempts": 314,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 265
+    },
+    "reconnect_burst": {
+      "entered": true,
+      "generated": 232,
+      "accepted": 384,
+      "refusalAttempts": 232,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 308
+    },
+    "full_downstream_outage": {
+      "entered": true,
+      "generated": 391,
+      "accepted": 16,
+      "refusalAttempts": 375,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 496
+    },
+    "retry_recovery": {
+      "entered": true,
+      "generated": 287,
+      "accepted": 368,
+      "refusalAttempts": 287,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 557
+    },
+    "repeated_order_outage": {
+      "entered": true,
+      "generated": 289,
+      "accepted": 16,
+      "refusalAttempts": 273,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 711
+    },
+    "observer_pressure_restart": {
+      "entered": true,
+      "generated": 233,
+      "accepted": 368,
+      "refusalAttempts": 233,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 701
+    },
+    "final_recovery": {
+      "entered": true,
+      "generated": 389,
+      "accepted": 983,
+      "refusalAttempts": 389,
+      "maximumPendingRows": 96,
+      "maximumUpstreamQueue": 561
+    }
+  },
+  "ownerHistory": [
+    {
+      "reason": "fresh_start",
+      "startupDurationMs": 28.666099999999986,
+      "pendingRowsAtStart": 0,
+      "shutdown": {
+        "shutdownDurationMs": 8.144000000000233,
+        "pendingRows": 96,
+        "retryAtMs": "1784474095320",
+        "schedulerState": {
+          "status": "stopped",
+          "tickCount": 126,
+          "lastError": null
+        },
+        "lifecycleBefore": {
+          "schema": "causal-order-monitor/lifecycle-snapshot",
+          "version": 1,
+          "generatedAtMs": "1784474106320",
+          "status": "open",
+          "queueDepth": 16,
+          "queueCapacity": 16,
+          "overflowPolicy": "drop_oldest",
+          "subscriberCount": 24,
+          "droppedTotal": 6831,
+          "listenerFailureTotal": 12,
+          "lastDrop": {
+            "occurredAtMs": "1784474106320",
+            "eventType": "storagePressureObserved",
+            "reason": "queue_overflow"
+          }
+        },
+        "flushResult": {
+          "status": "timed_out",
+          "queueDepth": 15,
+          "activeDispatch": true
+        }
+      }
+    },
+    {
+      "reason": "restart_during_retry_and_observer_pressure",
+      "startupDurationMs": 25.59990000000016,
+      "pendingRowsAtStart": 96,
+      "pendingRowsAfterRestart": 96
+    }
+  ],
+  "lifecycle": {
+    "observedByType": {
+      "ingressAttempted": 136,
+      "ingressAccepted": 35,
+      "ingressRefused": 267,
+      "storageAppendFailed": 0,
+      "storageCheckpointCompleted": 0,
+      "deliveryAttempted": 3,
+      "deliveryHandlerCompleted": 3,
+      "deliveryAcknowledged": 1597,
+      "deliveryFailed": 0,
+      "deliveryIndeterminate": 0,
+      "replayStateChanged": 1,
+      "replayBatchClaimed": 0,
+      "replayBatchAcknowledged": 1,
+      "replayBatchFailed": 0,
+      "retentionDeadLettered": 0,
+      "retentionDeleted": 0,
+      "healthChanged": 0,
+      "storagePressureObserved": 4,
+      "capacityPressureChanged": 0,
+      "operationDurationObserved": 586
+    },
+    "final": {
+      "schema": "causal-order-monitor/lifecycle-snapshot",
+      "version": 1,
+      "generatedAtMs": "1784474850320",
+      "status": "open",
+      "queueDepth": 6,
+      "queueCapacity": 16,
+      "overflowPolicy": "drop_oldest",
+      "subscriberCount": 24,
+      "droppedTotal": 14963,
+      "listenerFailureTotal": 26,
+      "lastDrop": {
+        "occurredAtMs": "1784474844560",
+        "eventType": "deliveryHandlerCompleted",
+        "reason": "queue_overflow"
+      }
+    }
+  },
+  "scheduler": {
+    "configuredIntervalMs": 25,
+    "healthProbeCount": 278,
+    "errors": [],
+    "wallGapMs": {
+      "median": 32,
+      "p95": 58,
+      "maximum": 211
+    },
+    "oneInFlightReplayAuthority": "MonitorScheduler tick coalescing plus the retained Chunk 8 deterministic contract"
+  },
+  "retry": {
+    "failedEventId": "edge-e-63",
+    "persistedDeadlineMs": "1784474095320",
+    "firstSuccessfulReplayAtMs": "1784474113040",
+    "successfulReplaySampleTimesMs": [
+      "1784474113040"
+    ]
+  },
+  "eventLoop": {
+    "minimumMs": 19.562,
+    "meanMs": 38.545,
+    "p95Ms": 55.443,
+    "p99Ms": 138.543,
+    "maximumMs": 225.182
+  },
+  "resourceAnalysis": {
+    "stableWindow": {
+      "fromSimulatedMs": 326400,
+      "toSimulatedMs": 1358640,
+      "sampleCount": 33
+    },
+    "heapGrowthBytes": 1108320,
+    "rssGrowthBytes": 9392128,
+    "activeHandleGrowth": 0,
+    "databaseGrowthExplanation": "Expected retained delivered rows and bounded health/replay history; terminal retention has not elapsed during this run.",
+    "conclusions": {
+      "heapWithinEnvelope": true,
+      "rssWithinEnvelope": true,
+      "activeHandlesWithinEnvelope": true,
+      "walWithinEnvelope": true,
+      "logicalCapacityWithinEnvelope": true
+    }
+  },
+  "final": {
+    "upstreamQueue": 0,
+    "operator": {
+      "schema": "causal-order-monitor/operator-snapshot",
+      "version": 1,
+      "generatedAtMs": "1784474850440",
+      "status": "healthy",
+      "affectedComponents": [],
+      "recommendedAction": "none",
+      "routingMode": "normal",
+      "throttleTier": "very_slow",
+      "admission": {
+        "posture": "accepted_live",
+        "accepted": true,
+        "httpStatus": 202,
+        "reasonCode": "MONITOR_LIVE_FLOW_AVAILABLE"
+      },
+      "backlog": {
+        "totalRows": 0,
+        "readyRows": 0,
+        "retryWaitingRows": 0,
+        "oldestAgeMs": "0",
+        "earliestRetryAtMs": null
+      },
+      "replay": {
+        "state": "idle",
+        "gateClosed": false,
+        "backlogRemainingRows": 0,
+        "queuedEventCount": 0,
+        "deliveredEventCount": 0,
+        "progressPercent": null,
+        "consecutiveFailureCount": 0,
+        "nextRetryAtMs": null,
+        "retryDelayMs": null
+      },
+      "storage": {
+        "pressure": "normal",
+        "databaseBytes": "2166784",
+        "walBytes": "4161232",
+        "filesystemAvailableBytes": "130720378880",
+        "filesystemTotalBytes": "510392602624",
+        "filesystemUsedPercent": 74.38
+      }
+    },
+    "capacity": {
+      "schema": "causal-order-monitor/capacity-snapshot",
+      "version": 1,
+      "generatedAtMs": "1784474850320",
+      "overflowPolicy": "reject_new",
+      "admission": {
+        "posture": "open",
+        "reasonCode": null,
+        "limitingDimension": null
+      },
+      "limits": {
+        "maxSerializedEventBytes": "16384",
+        "maxPendingRows": 96,
+        "maxPendingSerializedBytes": "393216",
+        "filesystemReserve": null
+      },
+      "usage": {
+        "pendingRows": 0,
+        "pendingSerializedBytes": "0",
+        "databaseBytes": "2166784",
+        "walBytes": "4161232",
+        "filesystemAvailableBytes": "130720378880",
+        "filesystemTotalBytes": "510392602624"
+      },
+      "utilization": {
+        "pendingRowsPercent": 0,
+        "pendingSerializedBytesPercent": 0
+      },
+      "lastRefusal": {
+        "occurredAtMs": "1784474691560",
+        "limitingDimension": "pending_rows",
+        "reasonCode": "MONITOR_CAPACITY_PENDING_ROWS",
+        "limit": "96",
+        "current": "96",
+        "attempted": "97",
+        "retryable": true,
+        "recommendedAction": "retry_when_capacity_available"
+      },
+      "counters": {
+        "refusedTotal": 1173,
+        "storageAppendFailureTotal": 0
+      }
+    },
+    "database": {
+      "counts": {
+        "ingress_events": 2395,
+        "component_health_log": 14,
+        "replay_sessions": 155
+      },
+      "integrity": "ok"
+    }
+  },
+  "fatalError": null,
+  "rawReport": "artifacts\\validation\\monitor-phase6-smoke.json"
+}

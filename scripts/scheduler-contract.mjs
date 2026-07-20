@@ -60,8 +60,52 @@ try {
   assert.equal(scheduler.getState().status, "stopped");
   assert.equal(scheduler.getState().tickCount, 1);
   assert.throws(() => adapter.getRuntime().getSnapshot(), /closed/i);
-  console.log("Scheduler contract passed: ticks serialize, health probes are caller-owned, retry/prune work remains bounded, and stop is idempotent with optional adapter close.");
 } finally {
   await scheduler.stop();
   rmSync(workspace, { recursive: true, force: true });
 }
+
+const offlineWorkspace = mkdtempSync(join(tmpdir(), "monitor-scheduler-offline-"));
+const offlineAdapter = new TransportMonitorAdapter(
+  { deliverToDedupe() {}, deliverToOrder() {} },
+  { reservoir: { databasePath: join(offlineWorkspace, "monitor.sqlite") } },
+);
+const offlineTimers = [];
+const offlineScheduler = new MonitorScheduler({
+  adapter: offlineAdapter,
+  replayIntervalMs: 1,
+  pruneIntervalMs: 1,
+  healthIntervalMs: 1,
+  closeAdapterOnStop: true,
+  timers: {
+    setTimeout(callback, delayMs) {
+      const handle = { callback, delayMs, cleared: false };
+      offlineTimers.push(handle);
+      return handle;
+    },
+    clearTimeout(handle) { handle.cleared = true; },
+  },
+  now: () => 10_000n,
+});
+
+try {
+  offlineAdapter.updateComponentHealth("dedupe", { state: "offline", observedAt: 10_000n });
+  offlineAdapter.updateComponentHealth("causal-order", { state: "offline", observedAt: 10_000n });
+  await offlineAdapter.ingest({
+    id: "offline-backlog",
+    nodeId: "scheduler-node",
+    clock: { physicalTimeMs: 10_000n, logicalCounter: 0n, nodeId: "scheduler-node" },
+    ingestedAt: 10_000n,
+    payload: { kind: "scheduler-offline" },
+  });
+  offlineAdapter.getRuntime().queueManagedReplay();
+  offlineScheduler.start();
+  await offlineScheduler.tick();
+  assert.equal(offlineScheduler.getState().lastError, null);
+  assert.equal(offlineAdapter.getReplaySnapshot().state, "queued");
+} finally {
+  await offlineScheduler.stop();
+  rmSync(offlineWorkspace, { recursive: true, force: true });
+}
+
+console.log("Scheduler contract passed: ticks serialize, offline replay is skipped, health probes are caller-owned, retry/prune work remains bounded, and stop is idempotent with optional adapter close.");

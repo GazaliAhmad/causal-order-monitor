@@ -31,6 +31,15 @@ function ownKeys(value) {
   return sorted(Object.keys(value));
 }
 
+function assertIncludes(actual, expected, label) {
+  const actualSet = new Set(actual);
+  assert.deepEqual(
+    expected.filter((value) => !actualSet.has(value)),
+    [],
+    `${label} should retain every v0.3.0 value`,
+  );
+}
+
 function prototypeMethods(value) {
   return sorted(
     Object.getOwnPropertyNames(value.prototype).filter((name) => name !== "constructor"),
@@ -59,7 +68,7 @@ const runtimeNamespaces = {
   types: typesModule,
 };
 for (const [name, expectedExports] of Object.entries(v030PublicContract.runtimeNamespaces)) {
-  assert.deepEqual(ownKeys(runtimeNamespaces[name]), sorted(expectedExports), `${name} runtime exports`);
+  assertIncludes(ownKeys(runtimeNamespaces[name]), expectedExports, `${name} runtime exports`);
 }
 
 assert.deepEqual(prototypeMethods(storageModule.SQLiteReservoir), sorted(
@@ -73,13 +82,31 @@ assert.deepEqual(prototypeMethods(transportModule.TransportMonitorAdapter), sort
 ));
 
 const defaults = configModule.createDefaultMonitorConfig();
-assert.deepEqual(ownKeys(defaults), v030PublicContract.configKeys.root);
-assert.deepEqual(ownKeys(defaults.reservoir), v030PublicContract.configKeys.reservoir);
-assert.equal(storageModule.MONITOR_SQLITE_SCHEMA_VERSION, v030PublicContract.schema.version);
+assertIncludes(ownKeys(defaults), v030PublicContract.configKeys.root, "root config keys");
+assertIncludes(
+  ownKeys(defaults.reservoir),
+  v030PublicContract.configKeys.reservoir,
+  "reservoir config keys",
+);
+assert.ok(storageModule.MONITOR_SQLITE_SCHEMA_VERSION >= v030PublicContract.schema.version);
 
 for (const [declarationPath, fragments] of Object.entries(v030PublicContract.declarationFragments)) {
   const declaration = normalizeWhitespace(readFileSync(declarationPath, "utf8"));
   for (const fragment of fragments) {
+    if (fragment.startsWith("export type ") && fragment.includes(" | ")) {
+      const typeName = /^export type ([A-Za-z0-9_]+)/.exec(fragment)?.[1];
+      const retainedLiterals = [...fragment.matchAll(/"([^"]+)"/g)].map(
+        (match) => match[0],
+      );
+      assert.ok(typeName && declaration.includes(`export type ${typeName}`));
+      for (const literal of retainedLiterals) {
+        assert.ok(
+          declaration.includes(literal),
+          `${declarationPath} should retain ${typeName} value ${literal}`,
+        );
+      }
+      continue;
+    }
     assert.ok(
       declaration.includes(normalizeWhitespace(fragment)),
       `${declarationPath} should preserve v0.3.0 declaration fragment: ${fragment}`,
@@ -119,13 +146,13 @@ try {
 
 const db = new DatabaseSync(databasePath, { readOnly: true });
 try {
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, v030PublicContract.schema.version);
+  assert.ok(db.prepare("PRAGMA user_version").get().user_version >= v030PublicContract.schema.version);
   const tableNames = db.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   ).all().map((row) => row.name);
-  assert.deepEqual(tableNames, Object.keys(v030PublicContract.schema.tables).sort());
+  assertIncludes(tableNames, Object.keys(v030PublicContract.schema.tables), "schema tables");
   for (const [tableName, expectedColumns] of Object.entries(v030PublicContract.schema.tables)) {
-    assert.deepEqual(
+    assertIncludes(
       db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name),
       expectedColumns,
       `${tableName} columns`,
@@ -134,12 +161,12 @@ try {
   const indexNames = db.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name",
   ).all().map((row) => row.name);
-  assert.deepEqual(indexNames, v030PublicContract.schema.indexes);
+  assertIncludes(indexNames, v030PublicContract.schema.indexes, "schema indexes");
 } finally {
   db.close();
   rmSync(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 console.log(
-  "compatibility audit passed: retained v0.3.0 package subpaths, runtime exports, declarations, methods, config, snapshots, results, stable values, and complete schema-v2 layout are protected",
+  "compatibility audit passed: retained v0.3.0 package subpaths, runtime exports, declarations, methods, config, snapshots, results, stable values, and schema-v2 layout remain protected as v0.5 additive subsets",
 );

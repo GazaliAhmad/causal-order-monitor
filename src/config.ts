@@ -7,9 +7,15 @@ import {
   createDefaultMonitorConfig,
   DEFAULT_MONITOR_CONFIG_FILE,
   type MonitorComponentHealthConfig,
+  type MonitorCapacityConfig,
+  type MonitorCapacityOverflowPolicy,
   type MonitorConfig,
   type MonitorHealthConfig,
   type MonitorJsonComponentHealthConfig,
+  type MonitorJsonCapacityConfig,
+  type MonitorJsonByteLimit,
+  type MonitorJsonFilesystemReserveConfig,
+  type MonitorJsonLifecycleConfig,
   type MonitorJsonConfig,
   type MonitorJsonDuration,
   type MonitorJsonHealthConfig,
@@ -19,6 +25,9 @@ import {
   type MonitorJsonThrottleTierConfig,
   type MonitorJsonTransportConfig,
   type MonitorReplayConfig,
+  type MonitorFilesystemReserveConfig,
+  type MonitorLifecycleConfig,
+  type MonitorLifecycleOverflowPolicy,
   type MonitorStartupConfig,
   type MonitorStartupHealthPolicy,
   type MonitorJsonStartupConfig,
@@ -59,7 +68,9 @@ export interface MonitorConfigEnvironmentOptions {
 }
 
 export interface MonitorConfigOverride {
-  reservoir?: Partial<MonitorReservoirConfig>;
+  reservoir?: Partial<Omit<MonitorReservoirConfig, "capacity">> & {
+    capacity?: Partial<MonitorCapacityConfig>;
+  };
   transport?: Partial<MonitorTransportConfig>;
   health?: {
     transport?: Partial<MonitorComponentHealthConfig>;
@@ -75,6 +86,7 @@ export interface MonitorConfigOverride {
   };
   replay?: Partial<MonitorReplayConfig>;
   startup?: Partial<MonitorStartupConfig>;
+  lifecycle?: Partial<MonitorLifecycleConfig>;
   now?: () => bigint;
 }
 
@@ -207,9 +219,139 @@ function parseOptionalDuration(
   return parseDurationMs(value, pathSegments);
 }
 
+function parseOptionalByteLimit(
+  value: unknown,
+  pathSegments: ReadonlyArray<string>,
+): bigint | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(
+        `${formatPath(pathSegments)} must be null, a non-negative safe integer, or an unsigned decimal integer string.`,
+      );
+    }
+    return BigInt(value);
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return BigInt(value);
+  }
+  throw new Error(
+    `${formatPath(pathSegments)} must be null, a non-negative safe integer, or an unsigned decimal integer string.`,
+  );
+}
+
+function parseCapacityConfig(
+  value: MonitorJsonCapacityConfig | undefined,
+): Partial<MonitorCapacityConfig> {
+  if (value === undefined) return {};
+  const objectValue = assertObject(value, ["reservoir", "capacity"]);
+  assertAllowedKeys(
+    objectValue,
+    [
+      "maxSerializedEventBytes",
+      "maxPendingRows",
+      "maxPendingSerializedBytes",
+      "filesystemReserve",
+      "overflowPolicy",
+    ],
+    ["reservoir", "capacity"],
+  );
+  const maxPendingRows = objectValue.maxPendingRows;
+  if (
+    maxPendingRows !== undefined &&
+    maxPendingRows !== null &&
+    (!Number.isSafeInteger(maxPendingRows) || (maxPendingRows as number) < 0)
+  ) {
+    throw new Error(
+      "reservoir.capacity.maxPendingRows must be null or a non-negative safe integer.",
+    );
+  }
+  if (
+    objectValue.overflowPolicy !== undefined &&
+    objectValue.overflowPolicy !== "reject_new"
+  ) {
+    throw new Error("reservoir.capacity.overflowPolicy must be 'reject_new'.");
+  }
+  const maxSerializedEventBytes = parseOptionalByteLimit(
+    objectValue.maxSerializedEventBytes,
+    ["reservoir", "capacity", "maxSerializedEventBytes"],
+  );
+  const maxPendingSerializedBytes = parseOptionalByteLimit(
+    objectValue.maxPendingSerializedBytes,
+    ["reservoir", "capacity", "maxPendingSerializedBytes"],
+  );
+  const filesystemReserve = parseFilesystemReserveConfig(
+    objectValue.filesystemReserve as MonitorJsonFilesystemReserveConfig | null | undefined,
+  );
+  return {
+    ...(maxSerializedEventBytes !== undefined ? { maxSerializedEventBytes } : {}),
+    ...(maxPendingRows !== undefined
+      ? { maxPendingRows: maxPendingRows as number | null }
+      : {}),
+    ...(maxPendingSerializedBytes !== undefined
+      ? { maxPendingSerializedBytes }
+      : {}),
+    ...(filesystemReserve !== undefined ? { filesystemReserve } : {}),
+    ...(objectValue.overflowPolicy !== undefined
+      ? { overflowPolicy: "reject_new" as const }
+      : {}),
+  };
+}
+
+function parseFilesystemReserveConfig(
+  value: MonitorJsonFilesystemReserveConfig | null | undefined,
+): MonitorFilesystemReserveConfig | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const objectValue = assertObject(value, ["reservoir", "capacity", "filesystemReserve"]);
+  assertAllowedKeys(
+    objectValue,
+    ["minimumAvailableBytes", "resumeAvailableBytes", "unavailableEvidence"],
+    ["reservoir", "capacity", "filesystemReserve"],
+  );
+  const minimumAvailableBytes = parseOptionalByteLimit(
+    objectValue.minimumAvailableBytes,
+    ["reservoir", "capacity", "filesystemReserve", "minimumAvailableBytes"],
+  );
+  const resumeAvailableBytes = parseOptionalByteLimit(
+    objectValue.resumeAvailableBytes,
+    ["reservoir", "capacity", "filesystemReserve", "resumeAvailableBytes"],
+  );
+  if (minimumAvailableBytes === undefined || minimumAvailableBytes === null) {
+    throw new Error(
+      "reservoir.capacity.filesystemReserve.minimumAvailableBytes is required and must be a non-negative integer.",
+    );
+  }
+  if (resumeAvailableBytes === undefined || resumeAvailableBytes === null) {
+    throw new Error(
+      "reservoir.capacity.filesystemReserve.resumeAvailableBytes is required and must be a non-negative integer.",
+    );
+  }
+  if (resumeAvailableBytes <= minimumAvailableBytes) {
+    throw new Error(
+      "reservoir.capacity.filesystemReserve.resumeAvailableBytes must be greater than minimumAvailableBytes.",
+    );
+  }
+  const unavailableEvidence = objectValue.unavailableEvidence;
+  if (
+    unavailableEvidence !== "allow_logical_admission" &&
+    unavailableEvidence !== "refuse_admission"
+  ) {
+    throw new Error(
+      "reservoir.capacity.filesystemReserve.unavailableEvidence must be 'allow_logical_admission' or 'refuse_admission'.",
+    );
+  }
+  return {
+    minimumAvailableBytes,
+    resumeAvailableBytes,
+    unavailableEvidence,
+  };
+}
+
 function parseReservoirConfig(
   value: MonitorJsonReservoirConfig | undefined,
-): Partial<MonitorReservoirConfig> {
+): MonitorConfigOverride["reservoir"] {
   if (value === undefined) {
     return {};
   }
@@ -226,6 +368,7 @@ function parseReservoirConfig(
       "deliveredRetentionMs",
       "deadLetterRetentionMs",
       "walAutoCheckpointPages",
+      "capacity",
     ],
     ["reservoir"],
   );
@@ -259,6 +402,9 @@ function parseReservoirConfig(
     walAutoCheckpointPages: parseOptionalNonNegativeInteger(
       objectValue.walAutoCheckpointPages,
       ["reservoir", "walAutoCheckpointPages"],
+    ),
+    capacity: parseCapacityConfig(
+      objectValue.capacity as MonitorJsonCapacityConfig | undefined,
     ),
   };
 }
@@ -459,6 +605,42 @@ function parseStartupConfig(
   };
 }
 
+function parseLifecycleConfig(
+  value: MonitorJsonLifecycleConfig | undefined,
+): Partial<MonitorLifecycleConfig> {
+  if (value === undefined) return {};
+  const objectValue = assertObject(value, ["lifecycle"]);
+  assertAllowedKeys(
+    objectValue,
+    ["queueCapacity", "overflowPolicy", "shutdownFlushTimeoutMs"],
+    ["lifecycle"],
+  );
+  const queueCapacity = parseOptionalPositiveInteger(
+    objectValue.queueCapacity,
+    ["lifecycle", "queueCapacity"],
+  );
+  if (queueCapacity !== undefined && !Number.isSafeInteger(queueCapacity)) {
+    throw new Error("lifecycle.queueCapacity must be a positive safe integer.");
+  }
+  if (
+    objectValue.overflowPolicy !== undefined &&
+    objectValue.overflowPolicy !== "drop_oldest"
+  ) {
+    throw new Error("lifecycle.overflowPolicy must be 'drop_oldest'.");
+  }
+  const shutdownFlushTimeoutMs = parseOptionalDuration(
+    objectValue.shutdownFlushTimeoutMs,
+    ["lifecycle", "shutdownFlushTimeoutMs"],
+  );
+  return {
+    ...(queueCapacity !== undefined ? { queueCapacity } : {}),
+    ...(objectValue.overflowPolicy !== undefined
+      ? { overflowPolicy: "drop_oldest" as const }
+      : {}),
+    ...(shutdownFlushTimeoutMs !== undefined ? { shutdownFlushTimeoutMs } : {}),
+  };
+}
+
 export function parseMonitorConfigJson(jsonText: string): MonitorJsonConfig {
   let parsedValue: unknown;
   try {
@@ -471,7 +653,7 @@ export function parseMonitorConfigJson(jsonText: string): MonitorJsonConfig {
   const objectValue = assertObject(parsedValue, ["monitorConfig"]);
   assertAllowedKeys(
     objectValue,
-    ["reservoir", "transport", "health", "throttle", "replay", "startup"],
+    ["reservoir", "transport", "health", "throttle", "replay", "startup", "lifecycle"],
     ["monitorConfig"],
   );
 
@@ -487,6 +669,7 @@ function resolvePartialMonitorConfig(
   const throttle = parseThrottleConfig(config.throttle);
   const replay = parseReplayConfig(config.replay);
   const startup = parseStartupConfig(config.startup);
+  const lifecycle = parseLifecycleConfig(config.lifecycle);
 
   return {
     reservoir: {
@@ -521,6 +704,9 @@ function resolvePartialMonitorConfig(
     startup: {
       ...startup,
     },
+    lifecycle: {
+      ...lifecycle,
+    },
   };
 }
 
@@ -534,6 +720,10 @@ function mergeMonitorConfig(
     reservoir: {
       ...base.reservoir,
       ...override.reservoir,
+      capacity: {
+        ...base.reservoir.capacity,
+        ...override.reservoir?.capacity,
+      },
     },
     transport: {
       ...base.transport,
@@ -580,6 +770,10 @@ function mergeMonitorConfig(
     startup: {
       ...base.startup,
       ...override.startup,
+    },
+    lifecycle: {
+      ...base.lifecycle,
+      ...override.lifecycle,
     },
   };
 }
@@ -659,9 +853,15 @@ export {
   createDefaultMonitorConfig,
   DEFAULT_MONITOR_CONFIG_FILE,
   type MonitorComponentHealthConfig,
+  type MonitorCapacityConfig,
+  type MonitorCapacityOverflowPolicy,
   type MonitorConfig,
   type MonitorHealthConfig,
   type MonitorJsonComponentHealthConfig,
+  type MonitorJsonCapacityConfig,
+  type MonitorJsonByteLimit,
+  type MonitorJsonFilesystemReserveConfig,
+  type MonitorJsonLifecycleConfig,
   type MonitorJsonConfig,
   type MonitorJsonDuration,
   type MonitorJsonHealthConfig,
@@ -671,6 +871,9 @@ export {
   type MonitorJsonThrottleTierConfig,
   type MonitorJsonTransportConfig,
   type MonitorReplayConfig,
+  type MonitorFilesystemReserveConfig,
+  type MonitorLifecycleConfig,
+  type MonitorLifecycleOverflowPolicy,
   type MonitorReservoirConfig,
   type MonitorThrottleConfig,
   type MonitorThrottleTierConfig,
