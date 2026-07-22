@@ -137,6 +137,35 @@ The run passed every fault phase, delivered all `427737` generated unique events
 
 ## Release Evidence
 
+### v0.6.0 transport compatibility release
+
+The published `v0.6.0` release adds qualification for exact published `@causal-order/transport@0.2.0`:
+
+- `npm run test:transport-0.2-stop-contract` uses the real root WebSocket transport path and proves 11 accepted transmissions produce 11 receiver callbacks or explicit failures, 11 independent transmission IDs, 8 dedupe acceptances, 3 duplicate decisions, 8 ordered events, no callback after successful stop, and zero terminal monitor rows, operations, lifecycle queue depth, or closed recovery gate.
+- `npm run test:peer-version-matrix` packs one immutable monitor artifact and installs it without testing across an exact-minimum row and a current row using transport `^0.2.0` plus published dedupe `1.2.0`.
+- `npm run test:packed-artifact-consumer` validates all public monitor imports and declarations, including `@causal-order/monitor/transport`, rejects linked or invalid clean-consumer trees, and supports a separately supplied packed core candidate.
+- The exact packed core `1.0.1` candidate is qualified separately with published transport `0.2.0` and dedupe `1.2.0`; it is not described as a registry publication.
+- Basic monitor qualification does not require testing `0.3.1`. The downstream testing release is `@causal-order/testing@0.3.1`, qualified separately against exact published monitor `0.6.0`.
+
+Validated environments:
+
+- Node `24.15.0`, npm `11.17.0`, Windows x64: complete CI, release check, and non-publishing npm dry run passed.
+- Node `22.23.1`, npm `11.17.0`, Windows x64: complete CI passed, including the real-transport and packed-consumer gates.
+
+Retained pre-publication candidate artifact:
+
+- filename: `causal-order-monitor-0.6.0.tgz`
+- files: `81`
+- packed bytes: `90,656`
+- unpacked bytes: `396,549`
+- SHA-1: `34f3ed201d7579920dd8d583229eb01e28dbd618`
+- SHA-256: `cd5b65f2eab9d8f4a7c090b5f4eea6aeefd18a04a44971d1475d5496c85db9d3`
+- integrity: `sha512-c2xvS6Z7nQGCHz05IM0JmZfHUGcO8ahe7xlSymGy+KlwSuCh4opK3vkAr/r3J3s5cRDBlGRYbBxw+ofWMa84sw==`
+
+The retained artifact and dry-run statement above record the pre-publication stage truthfully. Final npm publication is owned by `.github/workflows/publish.yml`: publishing the `v0.6.0` GitHub Release checks out that tag, reruns CI, and publishes `@causal-order/monitor@0.6.0` with npm provenance.
+
+### Retained v0.5.0 release evidence
+
 The package published as `v0.5.0` passes:
 
 - the complete CI and release-check contracts, including every focused Phase 6 capacity, lifecycle, benchmark, auxiliary-growth, retained-summary, and accelerated smoke gate

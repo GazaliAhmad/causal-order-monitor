@@ -44,6 +44,7 @@ const inspect = await import("@causal-order/monitor/inspect");
 const replay = await import("@causal-order/monitor/replay");
 const routing = await import("@causal-order/monitor/routing");
 const runtime = await import("@causal-order/monitor/runtime");
+const scheduler = await import("@causal-order/monitor/scheduler");
 const storage = await import("@causal-order/monitor/storage");
 const testing = await import("@causal-order/monitor/testing");
 const throttle = await import("@causal-order/monitor/throttle");
@@ -241,6 +242,12 @@ const rootAndSubpathChecks = [
     rootModule: root,
     subpathModule: runtime,
     subpathLabel: "@causal-order/monitor/runtime",
+  },
+  {
+    exportName: "MonitorScheduler",
+    rootModule: root,
+    subpathModule: scheduler,
+    subpathLabel: "@causal-order/monitor/scheduler",
   },
   {
     exportName: "SQLiteReservoir",

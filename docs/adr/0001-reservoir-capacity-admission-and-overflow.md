@@ -5,6 +5,8 @@
 - Target implementation: `v0.5.0`
 - Public-semantics freeze: `v0.6.0`
 
+Scheduling addendum (2026-07-22): the original freeze assignment above is retained as the accepted ADR's historical plan. The published `v0.6.0` release was reassigned to transport `0.2.0` compatibility and acknowledged-delivery qualification; the broader API and semantic freeze is now assigned to `v0.7.0` in `ROADMAP.md`.
+
 ## Context
 
 The monitor currently bounds pending work by retention age, not by row count, logical payload bytes, database bytes, or filesystem reserve. Retention and capacity answer different questions: a four-hour window limits age only after pruning runs, while a sudden ingress spike can exhaust storage well before four hours.
@@ -243,6 +245,8 @@ Before `v0.5.0` is complete, tests must cover:
 - `v0.5.0`: implement and qualify opt-in capacity controls under this accepted ADR.
 - `v0.6.0`: freeze configuration names/defaults, admission/error/reason semantics, operator fields, accounting definitions, and compatibility rules.
 - `v1.0.0`: publish no stronger physical-bound claim than the implementation and validation evidence support.
+
+The release list above is the ADR's original sequencing record. The 2026-07-22 scheduling addendum moves its `v0.6.0` freeze item to `v0.7.0` without deleting or rewriting the progression that led to the revised roadmap.
 
 ## Follow-up decisions
 

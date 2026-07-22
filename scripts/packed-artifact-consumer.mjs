@@ -188,6 +188,15 @@ function createTarball(workspace, suppliedTarball, suppliedPackDestination) {
 
 function createConsumerFiles(consumerDirectory, packageJson, versions, tarballPath) {
   const tarballSpecifier = pathToFileURL(tarballPath).href;
+  const dependencies = {
+    "@causal-order/dedupe": versions.dedupe,
+    "@causal-order/monitor": tarballSpecifier,
+    "@causal-order/transport": versions.transport,
+    "causal-order": versions.causalOrder,
+  };
+  if (versions.testing) {
+    dependencies["@causal-order/testing"] = versions.testing;
+  }
   writeJson(join(consumerDirectory, "package.json"), {
     name: "causal-order-monitor-packed-artifact-consumer",
     private: true,
@@ -196,13 +205,7 @@ function createConsumerFiles(consumerDirectory, packageJson, versions, tarballPa
       check: "tsc -p tsconfig.json --noEmit",
       verify: "node verify-runtime.mjs",
     },
-    dependencies: {
-      "@causal-order/dedupe": versions.dedupe,
-      "@causal-order/monitor": tarballSpecifier,
-      "@causal-order/testing": versions.testing,
-      "@causal-order/transport": versions.transport,
-      "causal-order": versions.causalOrder,
-    },
+    dependencies,
     devDependencies: {
       "@types/node": versions.typesNode,
       typescript: versions.typescript,
@@ -285,11 +288,6 @@ import {
   orderEvents,
   type EventEnvelope,
 } from "causal-order";
-import {
-  harnessPipeline,
-} from "@causal-order/testing/providers/default";
-import type { HarnessPipelineProvider } from "@causal-order/testing";
-
 const defaults: MonitorConfig = createDefaultMonitorConfig();
 const now: bigint = createDefaultMonitorNow()();
 const scenario: MonitorHarnessScenarioId = monitorHarnessScenarios[0].id;
@@ -315,8 +313,6 @@ type ContractTypes =
   | DedupeEvent
   | EventEnvelope;
 
-const pipeline: HarnessPipelineProvider = harnessPipeline;
-
 void defaults;
 void scenario;
 void event;
@@ -337,7 +333,6 @@ void MonitorScheduler;
 void createEventId;
 void DedupeGateway;
 void orderEvents;
-void pipeline;
 `,
     "utf8",
   );
@@ -414,7 +409,6 @@ for (const specifier of [
   "@causal-order/transport",
   "@causal-order/dedupe",
   "causal-order",
-  "@causal-order/testing/providers/default",
 ]) {
   const resolvedUrl = import.meta.resolve(specifier);
   const resolvedPath = realpathSync(fileURLToPath(resolvedUrl));
@@ -431,7 +425,6 @@ assert.equal(gateway.filter({ id: "peer-matrix-event" }), true);
 assert.equal(gateway.filter({ id: "peer-matrix-event" }), false);
 gateway.destroy();
 assert.equal(typeof peerNamespaces.get("causal-order").orderEvents, "function");
-assert.equal(typeof peerNamespaces.get("@causal-order/testing/providers/default").harnessPipeline.createDedupeAdapter, "function");
 
 for (const [subpath, target] of Object.entries(installedPackage.exports)) {
   if (typeof target === "string") {
@@ -477,7 +470,7 @@ try {
     transport: options.transportVersion ?? resolvedVersion(rootLockfile, "@causal-order/transport"),
     dedupe: options.dedupeVersion ?? resolvedVersion(rootLockfile, "@causal-order/dedupe"),
     causalOrder: options.causalOrderVersion ?? resolvedVersion(rootLockfile, "causal-order"),
-    testing: options.testingVersion ?? resolvedVersion(rootLockfile, "@causal-order/testing"),
+    testing: options.testingVersion,
     typesNode: options.typesNodeVersion ?? resolvedVersion(rootLockfile, "@types/node"),
     typescript: options.typescriptVersion ?? resolvedVersion(rootLockfile, "typescript"),
   };
@@ -496,6 +489,7 @@ try {
     ],
     { cwd: consumerDirectory },
   );
+  runNpm(["ls", "--all", "--json"], { cwd: consumerDirectory, capture: true });
 
   const installedMonitorPath = join(
     consumerDirectory,
@@ -512,6 +506,16 @@ try {
     isWithin(realpathSync(join(consumerDirectory, "node_modules")), realpathSync(installedMonitorPath)),
     "installed monitor should remain inside consumer node_modules",
   );
+  const isolatedPackages = ["@causal-order/transport", "@causal-order/dedupe", "causal-order"];
+  if (versions.testing) isolatedPackages.push("@causal-order/testing");
+  for (const packageName of isolatedPackages) {
+    const installedPath = join(consumerDirectory, "node_modules", ...packageName.split("/"));
+    assert.equal(lstatSync(installedPath).isSymbolicLink(), false, `${packageName} should not be linked`);
+    assert.ok(
+      isWithin(realpathSync(join(consumerDirectory, "node_modules")), realpathSync(installedPath)),
+      `${packageName} should resolve inside consumer node_modules`,
+    );
+  }
 
   runNpm(["run", "check"], { cwd: consumerDirectory });
   runNpm(["run", "verify"], { cwd: consumerDirectory });
@@ -520,11 +524,14 @@ try {
   const installedMonitor = installedLockfile.packages["node_modules/@causal-order/monitor"];
   assert.equal(installedMonitor.version, rootPackage.version, "installed monitor version");
   assert.equal(installedMonitor.integrity, tarball.integrity, "installed tarball integrity");
+  assert.equal(installedMonitor.peerDependencies["@causal-order/transport"], "^0.2.0");
   const resolvedVersions = {
     transport: installedLockfile.packages["node_modules/@causal-order/transport"].version,
     dedupe: installedLockfile.packages["node_modules/@causal-order/dedupe"].version,
     causalOrder: installedLockfile.packages["node_modules/causal-order"].version,
-    testing: installedLockfile.packages["node_modules/@causal-order/testing"].version,
+    ...(versions.testing
+      ? { testing: installedLockfile.packages["node_modules/@causal-order/testing"].version }
+      : {}),
     typesNode: installedLockfile.packages["node_modules/@types/node"].version,
     typescript: installedLockfile.packages["node_modules/typescript"].version,
   };

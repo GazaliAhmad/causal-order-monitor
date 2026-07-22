@@ -52,20 +52,19 @@ function hashFile(path, algorithm, encoding = "hex") {
 
 const packageJson = readJson(join(repositoryRoot, "package.json"));
 const matrix = readJson(
-  join(repositoryRoot, "scripts/fixtures/v0.4.0-peer-matrix.json"),
+  join(repositoryRoot, "scripts/fixtures/v0.6.0-peer-matrix.json"),
 );
 assert.equal(matrix.schemaVersion, 1, "peer matrix schema version");
-assert.equal(matrix.rows.length, 2, "peer matrix should contain minimum and range-latest rows");
+assert.equal(matrix.rows.length, 2, "peer matrix should contain minimum and current rows");
 
 const [minimumRow, rangeRow] = matrix.rows;
 assert.equal(minimumRow.id, "minimum");
-assert.equal(rangeRow.id, "declared-range-latest");
+assert.equal(rangeRow.id, "declared-range-current");
 assert.deepEqual(rangeRow.versions, {
   transport: packageJson.peerDependencies["@causal-order/transport"],
-  dedupe: packageJson.peerDependencies["@causal-order/dedupe"],
+  dedupe: "1.2.0",
   causalOrder: packageJson.peerDependencies["causal-order"],
-  testing: packageJson.devDependencies["@causal-order/testing"],
-}, "range-latest row should track declared package ranges");
+}, "current row should track declared transport/core ranges and published dedupe 1.2.0");
 
 const workspace = mkdtempSync(join(tmpdir(), "causal-order-monitor-peer-matrix-"));
 const artifactDirectory = join(workspace, "artifact");
@@ -87,8 +86,6 @@ try {
       row.versions.dedupe,
       "--causal-order-version",
       row.versions.causalOrder,
-      "--testing-version",
-      row.versions.testing,
     ];
 
     if (index === 0) {
