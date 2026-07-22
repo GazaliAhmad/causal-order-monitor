@@ -1,6 +1,6 @@
 {
   "name": "@causal-order/monitor",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Health-aware buffering, replay, and operator monitoring layer for the causal-order stack.",
   "author": "Gazali Ahmad",
   "license": "MIT",
@@ -110,7 +110,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "ci": "npm run check && npm run test:export-contract && npm run test:compatibility-audit && npm run test:operator-snapshot-contract && npm run test:operator-edge-state-contract && npm run test:storage-pressure-contract && npm run test:boundary-contract && npm run test:snapshot-query-plan-contract && npm run test:schema-compatibility && npm run test:capacity-accounting-contract && npm run test:logical-capacity-admission && npm run test:filesystem-reserve-capacity-snapshot && npm run test:lifecycle-dispatcher-contract && npm run test:lifecycle-instrumentation-contract && npm run test:performance-baseline-contract && npm run test:auxiliary-growth-contract && npm run test:phase6-soak-summary-contract && npm run test:monitor-phase6-smoke && npm run test:crash-boundary-contract && npm run test:storage-failure-contract && npm run test:restart-state-contract && npm run test:upgrade-restart-contract && npm run test:terminal-retention-contract && npm run test:wal-lifecycle-contract && npm run test:backup-restore-contract && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run test:concurrency-contract && npm run test:payload-boundary-contract && npm run test:shutdown-lifecycle-contract && npm run test:live-reservoir-ownership && npm run test:startup-health-policy && npm run test:scheduler && npm run test:replay-pump-concurrency && npm run test:packed-artifact-consumer && npm run test:packed-full-stack-lifecycle && npm run test:peer-version-matrix && npm run pack:check",
+    "ci": "npm run check && npm run test:export-contract && npm run test:compatibility-audit && npm run test:operator-snapshot-contract && npm run test:operator-edge-state-contract && npm run test:storage-pressure-contract && npm run test:boundary-contract && npm run test:snapshot-query-plan-contract && npm run test:schema-compatibility && npm run test:capacity-accounting-contract && npm run test:logical-capacity-admission && npm run test:filesystem-reserve-capacity-snapshot && npm run test:lifecycle-dispatcher-contract && npm run test:lifecycle-instrumentation-contract && npm run test:performance-baseline-contract && npm run test:auxiliary-growth-contract && npm run test:phase6-soak-summary-contract && npm run test:monitor-phase6-smoke && npm run test:crash-boundary-contract && npm run test:storage-failure-contract && npm run test:restart-state-contract && npm run test:upgrade-restart-contract && npm run test:terminal-retention-contract && npm run test:wal-lifecycle-contract && npm run test:backup-restore-contract && npm run test:http-thresholds-8nodes && npm run test:retention-admission-contract && npm run test:inspect-snapshot && npm run test:no-healthy-replay && npm run test:replay-ownership-guard && npm run test:replay-safety && npm run test:concurrency-contract && npm run test:transport-0.2-stop-contract && npm run test:payload-boundary-contract && npm run test:shutdown-lifecycle-contract && npm run test:live-reservoir-ownership && npm run test:startup-health-policy && npm run test:scheduler && npm run test:replay-pump-concurrency && npm run test:packed-artifact-consumer && npm run test:packed-full-stack-lifecycle && npm run test:peer-version-matrix && npm run pack:check",
     "benchmark:monitor": "npm run build && node scripts/run-monitor-benchmarks.mjs --profile baseline",
     "harness:monitor": "npm run build && node scripts/run-monitor-harness.mjs",
     "harness:order-outage": "npm run harness:monitor -- --monitor-scenario monitor-order-outage --duration 20m --time-scale 60 --profile monitor-order-outage --run-name monitor-order-outage-local",
@@ -125,6 +125,7 @@
     "test:capacity-accounting-contract": "npm run build && node scripts/capacity-accounting-contract.mjs",
     "test:compatibility-audit": "npm run build && node scripts/compatibility-audit.mjs",
     "test:concurrency-contract": "npm run build && node scripts/concurrency-contract.mjs",
+    "test:transport-0.2-stop-contract": "npm run build && node scripts/transport-0.2-stop-contract.mjs",
     "test:crash-boundary-contract": "npm run build && node scripts/crash-boundary-contract.mjs",
     "test:export-contract": "npm run build && node scripts/export-contract.mjs",
     "test:filesystem-reserve-capacity-snapshot": "npm run build && node scripts/filesystem-reserve-capacity-snapshot-contract.mjs",
@@ -174,11 +175,11 @@
   },
   "peerDependencies": {
     "@causal-order/dedupe": "^1.1.1",
-    "@causal-order/transport": "^0.1.2",
+    "@causal-order/transport": "^0.2.0",
     "causal-order": "^1.0.0"
   },
   "devDependencies": {
-    "@causal-order/testing": "^0.2.6",
+    "@causal-order/transport": "0.2.0",
     "@types/node": "^25.9.2",
     "typescript": "^6.0.3"
   }

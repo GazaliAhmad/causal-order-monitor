@@ -2,7 +2,7 @@
 
 Keep accepting events during bounded downstream outages, persist them locally, and replay them through deduplication before causal ordering resumes. `@causal-order/monitor` adds health-aware routing, controlled recovery, and operator visibility to a `causal-order` pipeline.
 
-Published package version: `v0.5.0`
+Published package version: `v0.6.0`
 
 ## Stack Position
 
@@ -26,10 +26,11 @@ npm install @causal-order/monitor causal-order @causal-order/dedupe @causal-orde
 
 | Package | Supported versions | Role |
 | --- | --- | --- |
-| `@causal-order/transport` | `^0.1.2` | Runtime peer |
+| `@causal-order/transport` | `^0.2.0` | Runtime peer |
 | `@causal-order/dedupe` | `^1.1.1` | Runtime peer and replay path |
 | `causal-order` | `^1.0.0` | Runtime peer |
-| `@causal-order/testing` | `^0.2.6` | Optional integration-test tooling |
+
+The basic monitor graph does not depend on `@causal-order/testing`. The downstream testing release is `@causal-order/testing@0.3.1`; its qualification uses transport `0.2.x` and exact published monitor `0.6.0` before testing is released through its own publication process.
 
 ## When to Use It
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-This file records the published `v0.5.0` repository release and its completed operational-behavior, performance, and soak-qualification work while preserving the earlier runtime and stack-integration decisions.
+This file records the published `v0.6.0` repository release and its completed transport `0.2.0` compatibility and acknowledged-delivery qualification while preserving the complete progression through the earlier runtime, stack-integration, and operational releases.
 
 `@causal-order/monitor` is a deployable recovery envelope around `@causal-order/transport`, `@causal-order/dedupe`, and `causal-order`. It is designed to preserve short-horizon ingress, route safely through degraded conditions, and make replay behavior inspectable for operators and harness tooling.
 
@@ -17,7 +17,8 @@ This file records the published `v0.5.0` repository release and its completed op
 
 ## Current Release
 
-- Status: `v0.5.0` is the current npm and repository release.
+- Status: `v0.6.0` is the current npm and repository release.
+- The published `v0.6.0` release establishes transport `0.2.0` compatibility and acknowledged-delivery qualification while preserving the public `@causal-order/monitor/transport` subpath.
 - The published monitor operates with bounded SQLite buffering, health-aware routing, replay coordination, operator-facing inspection output, JSON config loading, built-in `node:sqlite`, export-contract validation, and fail-fast replay ownership guidance.
 - The `v0.4.0` stack-integration release remains the inherited packed-artifact, peer-matrix, replay, ownership, startup, scheduler, and recovery baseline.
 - The `v0.3.3` compatibility-closure release remains the preserved v0.3.x baseline.
@@ -33,13 +34,14 @@ This file records the published `v0.5.0` repository release and its completed op
 | --- | --- |
 | `v0.4.0` | Stack integration and correctness invariants |
 | `v0.5.0` | Operational behavior, performance, and soak qualification |
-| `v0.6.0` | API and semantic freeze |
-| `v0.7.0` | Platform qualification |
-| `v0.8.0` | Operations and ecosystem readiness |
-| `v0.9.0` | Release-candidate hardening and burn-in |
+| `v0.6.0` | Transport `0.2.0` compatibility and acknowledged-delivery qualification |
+| `v0.7.0` | API and semantic freeze |
+| `v0.8.0` | Platform qualification |
+| `v0.9.0` | Operations and ecosystem readiness |
+| `v0.10.0` | Release-candidate hardening and burn-in |
 | `v1.0.0` | Stable recovery contract |
 
-The sequence is intentional: validate the real package stack and enforce correctness first; qualify operational behavior and performance before freezing public semantics; then complete platform, ecosystem, and release readiness before the stable contract.
+The sequence is intentional: validate the real package stack and enforce correctness first; qualify operational behavior and performance; establish the transport `0.2.x` acknowledgement and shutdown boundary; freeze public semantics; then complete platform, ecosystem, and release readiness before the stable contract.
 
 ## Package Intent
 
@@ -480,7 +482,28 @@ Exit criteria:
 
 Phase 6 is complete and published as `v0.5.0`. Transactional capacity, lifecycle observation, repeatable benchmark, accelerated long-horizon, ten-minute continuous-load, packed-artifact, peer-matrix, inherited recovery, and release evidence is retained in the repository and `.local/v0.5.x/0.5.0/` release records. The accelerated eight-hour profile is explicitly not an eight-hour continuous wall-clock claim.
 
-## Phase 7: API and Semantic Freeze (Target: `v0.6.0`)
+## Phase 7: Transport 0.2 Compatibility and Acknowledged Delivery (Published as `v0.6.0`)
+
+- declare `@causal-order/transport: ^0.2.0` and qualify against exact published transport `0.2.0`
+- retain exact transport `0.2.0` as a direct development dependency rather than obtaining it only transitively
+- preserve the public `@causal-order/monitor/transport` subpath and `TransportMonitorAdapter` contract
+- audit transmission acknowledgement, explicit refusal/failure, duplicate application IDs, accepted-send drain, monitor reconciliation, and shutdown ownership
+- add a deterministic real-transport regression that begins stop immediately after bounded unique and duplicate sends are accepted
+- replace the active peer-matrix baseline without rewriting historical transport `0.1.x` evidence
+- qualify one exact packed monitor artifact in clean consumers without requiring unpublished testing as basic registry evidence
+- retain exact Node 22 and Node 24 release evidence and hand the published monitor identity to downstream testing qualification
+
+Exit criteria:
+
+- the clean peer graph resolves transport `0.2.0` without overrides, links, invalid packages, or peer warnings
+- accepted transmissions equal receiver callbacks or explicit failures, with no callbacks after successful transport stop
+- dedupe and ordering counts reconcile exactly and monitor pending rows, operations, lifecycle work, and recovery state drain terminally
+- one immutable packed artifact preserves public imports and declarations and passes clean transport-to-monitor-to-dedupe-to-core qualification
+- current metadata, documentation, roadmap, changelog, lockfile, and artifact identity agree on `v0.6.0`
+
+Phase 7 is complete and published as `v0.6.0`. The release declares transport `^0.2.0`, qualifies exact transport `0.2.0`, preserves `@causal-order/monitor/transport`, and retains the acknowledged-send stop, peer-matrix, packed-consumer, Node 22, and Node 24 evidence recorded in `VALIDATION.md` and `.local/v0.6.x/0.6.0/`.
+
+## Phase 8: API and Semantic Freeze (Target: `v0.7.0`)
 
 - audit every root export, subpath, adapter result, configuration field, snapshot field, routing mode, reason code, and error type
 - define semantic-versioning rules for TypeScript types, config defaults, peer dependencies, subpaths, snapshots, and the SQLite schema
@@ -497,7 +520,7 @@ Exit criteria:
 - the intended `v1` root and subpath surfaces are explicit contract fixtures
 - startup forwarding, replay serialization, and overload refusal have explicit stable semantics
 
-## Phase 8: Platform Qualification (Target: `v0.7.0`)
+## Phase 9: Platform Qualification (Target: `v0.8.0`)
 
 - declare the supported Node.js and operating-system matrix
 - run packed-artifact tests across the supported platform matrix
@@ -506,7 +529,7 @@ Exit criteria:
 
 - supported platforms pass the same core recovery contracts
 
-## Phase 9: Operations and Ecosystem Readiness (Target: `v0.8.0`)
+## Phase 10: Operations and Ecosystem Readiness (Target: `v0.9.0`)
 
 - complete deployment, storage, upgrade, troubleshooting, and incident-response documentation
 - provide or document optional OpenTelemetry, Prometheus, StatsD, and application-defined adapters for the stable lifecycle-observer contract
@@ -519,9 +542,9 @@ Exit criteria:
 - release automation rejects incomplete or mismatched package metadata
 - persisted payload and operator-evidence responsibilities are documented and reviewed
 
-## Phase 10: Release-candidate Hardening and Burn-in (Target: `v0.9.0`)
+## Phase 11: Release-candidate Hardening and Burn-in (Target: `v0.10.0`)
 
-`v0.9.0` is a normal pre-1 release, not a SemVer pre-release identifier. If final `v1.0.0` artifacts require candidate publication, use `v1.0.0-rc.N` only for those actual candidates; no release-candidate sequence is preallocated.
+`v0.10.0` is a normal pre-1 release, not a SemVer pre-release identifier. If final `v1.0.0` artifacts require candidate publication, use `v1.0.0-rc.N` only for those actual candidates; no release-candidate sequence is preallocated.
 
 - freeze avoidable feature work and treat the public API and schema as release candidates
 - exercise fresh install, upgrade from every supported schema, crash recovery, prolonged outage, and downgrade-rejection paths
@@ -539,7 +562,7 @@ Exit criteria:
 
 Publish `v1.0.0` only when the monitor can make a durable compatibility and recovery promise to production consumers.
 
-- Phases 1 through 10 are complete and their required suites run in CI
+- Phases 1 through 11 are complete and their required suites run in CI
 - the public API, subpaths, configuration, operator snapshot, routing/reason codes, and error model are stable
 - the SQLite schema is versioned, supported migrations are transactional, and restart/crash recovery is proven
 - replay always follows the documented dedupe path and preserves ownership, gating, retry, and ordering invariants

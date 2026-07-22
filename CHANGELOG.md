@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0
+
+- changed the supported `@causal-order/transport` peer boundary from `^0.1.2` to `^0.2.0` and added exact transport `0.2.0` as a direct development dependency
+- removed published testing `0.2.6` from the monitor's basic development and packed-consumer graph because its auto-installed historical monitor peer makes the transport `0.2.0` tree invalid; the planned `@causal-order/testing@0.3.1` publication remains a separate post-publication qualification and release
+- preserved the complete public monitor surface, including `@causal-order/monitor/transport` and `TransportMonitorAdapter`, without a production runtime change
+- tightened the export contract to import `@causal-order/monitor/scheduler` directly and verify `MonitorScheduler` on both the root and scheduler subpath surfaces
+- added a deterministic real-transport acknowledged-send stop contract covering bounded unique events, intentional duplicate transmissions, independent transmission IDs, awaited monitor delivery, immediate stop, and zero post-stop callbacks
+- required exact terminal reconciliation across transport callbacks/failures, dedupe decisions, ordered events, monitor pending rows/operations, lifecycle work, and the recovery gate
+- replaced the active peer matrix with a newly named v0.6.0 fixture covering exact transport `0.2.0`, declared `^0.2.0`, retained core/dedupe minimums, and published dedupe `1.2.0` while preserving the historical v0.4.0 fixture
+- made basic packed-artifact qualification independent of unpublished testing and added clean-tree/link/peer assertions while retaining optional explicit testing-candidate installation for downstream handoff
+- qualified the packed monitor candidate separately against the exact packed core `1.0.1` candidate, published transport `0.2.0`, and published dedupe `1.2.0`
+- reassigned Roadmap Phase 7 to transport `0.2.0` compatibility and acknowledged-delivery qualification, moving API freeze through release-candidate hardening to v0.7.0 through v0.10.0
+
 ## v0.5.0
 
 - reorganized the README as a concise consumer entry point and moved detailed guidance into focused API, configuration, deployment, schema-compatibility, timing-evidence, and migration documents

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "rows": [
+    {
+      "id": "minimum",
+      "description": "Exact minimum published stack for the v0.6.0 transport compatibility boundary.",
+      "versions": {
+        "transport": "0.2.0",
+        "dedupe": "1.1.1",
+        "causalOrder": "1.0.0"
+      },
+      "installPreference": "offline"
+    },
+    {
+      "id": "declared-range-current",
+      "description": "Current registry qualification using the declared transport/core ranges and published dedupe 1.2.0.",
+      "versions": {
+        "transport": "^0.2.0",
+        "dedupe": "1.2.0",
+        "causalOrder": "^1.0.0"
+      },
+      "installPreference": "online"
+    }
+  ]
+}
